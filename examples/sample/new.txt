@@ -1,0 +1,8 @@
+title: Release notes
+version: 2.0.0
+
+The quick brown fox
+leaps over the lazy dog.
+A line that stays the same.
+A brand new line was added here.
+Shared trailer line.
