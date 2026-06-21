@@ -69,19 +69,36 @@ end
 local LINE_PRIORITY = 100
 local TEXT_PRIORITY = 200
 
+-- The per-hunk gutter sign for a changed real row, by its kind: `+` an added line,
+-- `~` a changed line, `-` a deleted one. A non-filler row's kind is exactly what this
+-- pane shows (an `add` row is real only on the added side, `del` only on the deleted
+-- side, `change` on both), so the kind maps straight to the glyph.
+local SIGN_GLYPH = { add = "+", change = "~", del = "-" }
+local SIGN_HL = { add = "NxDiffSignAdd", change = "NxDiffSignChange", del = "NxDiffSignDelete" }
+
 -- Decoration marks for one pane (`config` gates the optional layers):
 --   * whole-line DiffAdd/DiffDelete/DiffChange tint on every changed real row,
 --   * `DiffText` spans over the changed characters of a `change` row (`config.inline`,
---     from `entry.spans` the caller stashed — half-open 0-based byte ranges).
--- A blank filler row carries no decoration (it's the alignment gap). Per-hunk gutter
--- signs are deferred (`config.signs`): nxvim's core neither stores `sign_text` on an
--- extmark nor paints a gutter sign from one yet, so there's nothing to render — see the
--- plan's Phase 4 note.
+--     from `entry.spans` the caller stashed — half-open 0-based byte ranges),
+--   * a per-hunk gutter sign (`+`/`~`/`-`) on each changed real row (`config.signs`,
+--     via the core `sign_text` extmark decoration),
+--   * a `fillchar` rule across each blank filler row (`config.fillchar`, via the core
+--     `line_fill` extmark decoration) so the alignment gap reads as a gap, vim-style.
 local function pane_marks(proj, text, config)
   local marks = {}
   for i, e in ipairs(proj) do
-    if not e.filler then
-      local line0 = i - 1
+    local line0 = i - 1
+    if e.filler then
+      -- The alignment gap: paint the fillchar across the blank row (when configured).
+      if config.fillchar ~= "" then
+        marks[#marks + 1] = {
+          line = line0,
+          col = 0,
+          line_fill = { text = config.fillchar, hl_group = "NxDiffFiller" },
+          priority = LINE_PRIORITY,
+        }
+      end
+    else
       local hl = highlights.hl_for(e.kind)
       if hl then
         marks[#marks + 1] = {
@@ -90,6 +107,15 @@ local function pane_marks(proj, text, config)
           end_row = line0,
           end_col = #(text[i] or ""),
           hl_group = hl,
+          priority = LINE_PRIORITY,
+        }
+      end
+      if config.signs and SIGN_GLYPH[e.kind] then
+        marks[#marks + 1] = {
+          line = line0,
+          col = 0,
+          sign_text = SIGN_GLYPH[e.kind],
+          sign_hl_group = SIGN_HL[e.kind],
           priority = LINE_PRIORITY,
         }
       end
@@ -130,6 +156,11 @@ local function finish(session, api)
         pcall(function()
           if not session.config.wrap then
             vim.wo[win].wrap = false
+          end
+          -- With signs on, reserve the column on EVERY pane (not just ones that have a
+          -- sign) so the panes stay the same width and their lines keep lining up.
+          if session.config.signs then
+            vim.wo[win].signcolumn = "yes"
           end
           -- Only the focused pane can animate a scroll; a synced (non-focused) pane is
           -- moved with a crisp `set_topline`, so it would jump while the focused pane

@@ -152,8 +152,8 @@ require("nxvim-diff").setup({opts}) merges {opts} over the defaults (shown): >
       sync_cursor = true,   -- keep the panes' cursor row aligned
       wrap = false,         -- soft-wrap in panes (off → columns align)
       inline = true,        -- tint changed spans within a line (DiffText)
-      signs = false,        -- per-hunk gutter signs (deferred, see below)
-      fillchar = "-",       -- filler-row glyph (deferred, see below)
+      signs = false,        -- per-hunk gutter signs +/~/- (opt-in)
+      fillchar = "-",       -- glyph painted across a blank filler row
       layout = "auto",      -- "auto" | "vertical" | "horizontal"
       keymaps = { ... },    -- key -> action; false disables a key
       highlights = { ... }, -- Diff* / NxDiff* group overrides
@@ -170,13 +170,17 @@ Highlights use the canonical |hl-DiffAdd| / |hl-DiffDelete| / |hl-DiffChange|
 only a fallback is installed when a group is undefined. Plugin-private extras
 (filler, sign, label colors) live under the NxDiff* namespace.
 
-DEFERRED OPTIONS				*nxvim-diff-deferred*
+`signs` puts a `+`/`~`/`-` gutter sign on each added / changed / deleted line
+(opt-in; off by default since the tint + DiffText already convey a change). When
+on, every pane reserves the sign column (`signcolumn=yes`) so the panes stay the
+same width and keep lining up. `fillchar` paints its glyph across each blank
+filler (alignment) row — vim's diff-`fillchars` style — or `""` leaves the row
+blank. Both ride core extmark decorations (`sign_text` / `line_fill`).
 
-`signs` and `fillchar` are inert pending core support: nxvim cannot yet paint a
-gutter sign or a filler glyph from an extmark. The options exist so the surface
-is stable; a changed line is conveyed by its tint + DiffText, a filler by a
-blank row. `choose_ours` / `choose_theirs` merge actions (writing a 3-way
-resolution back into the conflicted buffer) are a planned follow-up.
+DEFERRED						*nxvim-diff-deferred*
+
+`choose_ours` / `choose_theirs` merge actions (writing a 3-way resolution back
+into the conflicted buffer) are a planned follow-up.
 
 ==============================================================================
 PERFORMANCE						*nxvim-diff-perf*

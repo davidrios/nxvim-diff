@@ -38,6 +38,10 @@ covered by `nxvim --test-plugin .`:
 - **Intra-line highlights** — the edited characters of a changed line are tinted with
   `DiffText` (a character-level diff).
 - **Hunk navigation** — `]c` / `[c` / `]C` / `[C`, with wrap-around.
+- **Gutter signs & fillchar** — `signs` puts a `+`/`~`/`-` gutter sign on each changed
+  line (opt-in; every pane reserves the column so they stay aligned), and `fillchar`
+  paints a rule across the blank alignment rows (vim's diff-filler style). Both ride
+  new core extmark decorations (`sign_text` / `line_fill`).
 - **Git source** — `:NxDiffGit` diffs the current file against HEAD, run inside the
   file's own repo, with clear not-a-repo / no-file / not-in-HEAD messages.
 - **Pure cores** — the LCS **diff engine** (2-way alignment + the center-anchored 3-way
@@ -49,10 +53,7 @@ Still building out (see
 
 - **`choose_ours` / `choose_theirs`** merge actions — writing a hunk's resolution back
   into the real conflicted buffer (the 3-way *layout* is done; the write-back is a
-  self-contained follow-up);
-- per-hunk gutter **signs** (`signs`) and **filler glyphs** (`fillchar`) — deferred until
-  nxvim's core can paint an extmark gutter sign / filler row; the options exist but are
-  inert (a changed line is conveyed by its tint + `DiffText`, a filler by a blank row).
+  self-contained follow-up).
 
 ## Install
 
@@ -155,8 +156,8 @@ require("nxvim-diff").setup({
   sync_cursor = true,    -- keep the panes' cursor row aligned
   wrap = false,          -- soft-wrap inside panes (off → columns align, leftcol syncs)
   inline = true,         -- highlight the changed spans within a changed line (DiffText)
-  signs = false,         -- per-hunk sign-column markers (deferred — needs core support)
-  fillchar = "-",        -- glyph for a filler row (deferred — fillers render blank today)
+  signs = false,         -- per-hunk gutter signs +/~/- (opt-in; reserves the column)
+  fillchar = "-",        -- glyph painted across a blank filler row ("" leaves it blank)
   layout = "auto",       -- "auto" | "vertical" | "horizontal"
   keymaps = { ... },     -- key → action (see config.ACTIONS); false disables a key
   highlights = { ... },  -- Diff* / NxDiff* group overrides

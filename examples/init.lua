@@ -32,6 +32,8 @@ nx.plugins({
       require("nxvim-diff").setup({
         sync_scroll = true,
         inline = true,
+        signs = true, -- +/~/- gutter signs on changed lines (try it; default off)
+        fillchar = "-", -- a rule across the blank alignment rows
       })
     end,
   },

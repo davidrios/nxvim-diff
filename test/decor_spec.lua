@@ -84,4 +84,63 @@ nx.test.describe("nxvim-diff decorations", function()
     end)
     nx.test.expect(#tint).to_be(1)
   end)
+
+  -- A change with an inserted line on the new side, so the old pane gets a filler row.
+  local function open_with_filler()
+    diff.open({
+      panes = {
+        { label = "old", lines = { "same", "tail" } },
+        { label = "new", lines = { "same", "extra", "tail" } },
+      },
+    })
+    return await_ready()
+  end
+
+  nx.test.it("places a per-hunk gutter sign on changed rows when signs = true", function()
+    require("nxvim-diff").setup({ signs = true })
+    local s = open_change() -- row 1 (0-based) is the foo()→bar() change on both panes
+    for _, pane in ipairs(s.panes) do
+      local sign = marks_where(pane, s, 1, function(d)
+        return d.sign_text ~= nil
+      end)
+      nx.test.expect(#sign).to_be(1)
+      nx.test.expect(sign[1][4].sign_text).to_be("~") -- `~` marks a changed line
+      nx.test.expect(sign[1][4].sign_hl_group).to_be("NxDiffSignChange")
+    end
+  end)
+
+  nx.test.it("signs default off — no sign_text marks", function()
+    local s = open_change() -- before_each setup({}) ⇒ signs = false
+    local sign = marks_where(s.panes[1], s, 1, function(d)
+      return d.sign_text ~= nil
+    end)
+    nx.test.expect(#sign).to_be(0)
+  end)
+
+  nx.test.it("paints the fillchar across a filler (alignment) row", function()
+    require("nxvim-diff").setup({ fillchar = "-" })
+    local s = open_with_filler()
+    -- The old pane's row 1 (0-based) is the filler opposite the inserted `extra`.
+    local fill = marks_where(s.panes[1], s, 1, function(d)
+      return d.line_fill ~= nil
+    end)
+    nx.test.expect(#fill).to_be(1)
+    nx.test.expect(fill[1][4].line_fill.text).to_be("-")
+    nx.test.expect(fill[1][4].line_fill.hl_group).to_be("NxDiffFiller")
+    -- A real (non-filler) row carries no fill.
+    nx.test
+      .expect(#marks_where(s.panes[1], s, 0, function(d)
+        return d.line_fill ~= nil
+      end))
+      .to_be(0)
+  end)
+
+  nx.test.it("fillchar = '' leaves filler rows blank (no line_fill mark)", function()
+    require("nxvim-diff").setup({ fillchar = "" })
+    local s = open_with_filler()
+    local fill = marks_where(s.panes[1], s, 1, function(d)
+      return d.line_fill ~= nil
+    end)
+    nx.test.expect(#fill).to_be(0)
+  end)
 end)

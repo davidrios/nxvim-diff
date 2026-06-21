@@ -138,7 +138,7 @@ and unlike `nowrap` the core defaults `scrollanim` *on*). The panes therefore sn
 lockstep with no animation. Covered by `sync_spec`'s "disables scroll animation on the
 panes" case, plus the editor repo's `window_local_scrollanim_*` rendering tests.
 
-## Phase 4 — Hunk nav polish, intra-line ✅ (signs deferred)
+## Phase 4 — Hunk nav polish, intra-line ✅ (signs later landed)
 
 - **Hunk nav** — `]c`/`[c`/`[C`/`]C` were already wired through `nav`; verified
   wrap-around (next past the last hunk → first; prev before the first → last) and the
@@ -152,14 +152,13 @@ panes" case, plus the editor repo's `window_local_scrollanim_*` rendering tests.
   extmarks at `TEXT_PRIORITY` (above the whole-line tint's `LINE_PRIORITY`). Covered by
   `diff_spec` (the pure spans, incl. the multibyte case) and `decor_spec` (the rendered
   extmarks + `inline = false`).
-- **Signs — DEFERRED.** Per-hunk gutter signs (`+`/`~`/`-`) can't be honored yet:
-  nxvim's core neither **stores** `sign_text` on an extmark (`VirtDecor` carries only
-  `virt_text`/`virt_lines`) nor **paints** a gutter sign from one — and the server's
-  extmark mirror doesn't round-trip the decoration payload, so a placed sign is invisible
-  *and* unobservable after a tick. Rather than ship dead, untestable code, the
-  `config.signs` option stays (default `false`, documented) and the feature waits on a
-  core gutter-sign capability (a sibling of the `'scrollanim'` core change). Until then a
-  changed line is conveyed by its tint + `DiffText`.
+- **Signs — LANDED** (was deferred; the core gained the capability, see
+  `docs/plans/2026-06-21-extmark-signs-and-fillchar.md` in the editor repo). nxvim's
+  `VirtDecor` now carries `sign_text` / `sign_hl_group`, projects them into the sign
+  column (merged with diagnostic signs), and round-trips them through the extmark mirror.
+  `config.signs` (opt-in, default `false`) places a `+`/`~`/`-` gutter sign on each
+  changed real row by its kind; every pane reserves the sign column (`signcolumn = yes`)
+  so they stay aligned. Covered by `decor_spec`.
 
 ## Phase 5 — git polish ✅ (done)
 
