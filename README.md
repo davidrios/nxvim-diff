@@ -34,9 +34,10 @@ This repo is a **scaffold with a working, tested core**. Implemented and covered
 
 Two-pane **rendering works** (Phase 2): a diff opens side-by-side in a dedicated tab,
 projected to equal height with alignment fillers and DiffAdd/DiffDelete/DiffChange
-tints. Still building out (see
-[`docs/plans/2026-06-20-nxvim-diff.md`](docs/plans/2026-06-20-nxvim-diff.md)): live
-scroll/cursor **sync** (Phase 3), intra-line `DiffText` + hunk signs (Phase 4), and the
+tints, with the panes locked in **scroll/cursor sync** (Phase 3) and the edited
+characters of a changed line highlighted with `DiffText` (Phase 4). Still building out
+(see [`docs/plans/2026-06-20-nxvim-diff.md`](docs/plans/2026-06-20-nxvim-diff.md)):
+per-hunk gutter **signs** (deferred — needs core support), git polish (Phase 5), and the
 **3-way** layout for diff3 conflicts (Phase 6) — a 3-pane spec fails loud until then.
 
 ## Install
@@ -121,7 +122,7 @@ require("nxvim-diff").setup({
   sync_cursor = true,    -- keep the panes' cursor row aligned
   wrap = false,          -- soft-wrap inside panes (off → columns align, leftcol syncs)
   inline = true,         -- highlight the changed spans within a changed line (DiffText)
-  signs = true,          -- a sign-column marker per hunk
+  signs = false,         -- per-hunk sign-column markers (deferred — needs core support)
   fillchar = "-",        -- glyph drawn on an alignment filler row ("" for blank)
   layout = "auto",       -- "auto" | "vertical" | "horizontal"
   keymaps = { ... },     -- key → action (see config.ACTIONS); false disables a key

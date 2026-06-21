@@ -1,27 +1,23 @@
 -- ~~~ Runnable demo for nxvim-diff ~~~
 --
--- Run it from this repo (which sits next to your nxvim checkout):
+-- Point nxvim at this folder as its config and open the sample file:
 --
---     NXVIM_CONFIG=examples cargo run -p nxvim -- examples/sample/new.txt
+--     NXVIM_CONFIG=examples nxvim examples/sample/new.txt
 --
 -- TRY IT:
 --   :NxDiffGit        diff the current file's working tree against git HEAD
 --   :NxDiffConflict   if the file has conflict markers, open them as a 3-way diff
 --
--- Inside a diff (once the viewer lands — see docs/plans):
+-- Inside a diff:
 --   ]c / [c      next / previous changed hunk     [C / ]C   first / last hunk
 --   R            refresh         q   close
+-- The panes scroll and move their cursor in lockstep, and a changed line shows the
+-- edited characters highlighted (DiffText).
 --
 -- Anything BEYOND those two commands is the Lua API — build a spec and call open().
 -- The custom `<leader>du` mapping below diffs the current buffer against an
 -- UPPERCASED copy of itself: that's the whole extension surface a git/LSP/formatter
 -- plugin would use to "send a diff for preview".
---
--- STATUS: this is a scaffold. The pure core — config, the LCS diff engine, the
--- conflict-marker parser, and spec validation — is implemented and tested
--- (`nxvim --test-plugin .`). The on-screen pane rendering + scroll-sync is built out
--- across Phases 2–3 (docs/plans/2026-06-20-nxvim-diff.md); until then opening a diff
--- resolves its content and then fails loud at the render step, on purpose.
 
 vim.g.mapleader = " "
 

@@ -49,11 +49,32 @@ nx.test.describe("nxvim-diff.diff", function()
     nx.test.expect(pb[2].line).to_be(2)
   end)
 
-  nx.test.it("inline char-diff fails loud until implemented (Phase 4)", function()
-    nx.test
-      .expect(function()
-        diff.inline("foo", "bar")
-      end)
-      .to_error("not implemented")
+  nx.test.it("inline char-diff marks only the changed spans", function()
+    -- "foo()" → "bar()": the first three chars differ, "()" is the common tail.
+    local sp = diff.inline("foo()", "bar()")
+    nx.test.expect(sp.a).to_equal({ { 0, 3 } })
+    nx.test.expect(sp.b).to_equal({ { 0, 3 } })
+  end)
+
+  nx.test.it("inline reports a mid-line insertion as a b-only span", function()
+    -- "ac" → "abc": 'b' inserted at byte 1 on the b side; the a side is unchanged.
+    local sp = diff.inline("ac", "abc")
+    nx.test.expect(sp.a).to_equal({})
+    nx.test.expect(sp.b).to_equal({ { 1, 2 } })
+  end)
+
+  nx.test.it("inline ranges are byte offsets over whole UTF-8 characters", function()
+    -- "café" → "cafe": only the last char differs. 'é' is 2 bytes (3..5), 'e' is 1 (3..4)
+    -- — the span must not split the multibyte character.
+    local sp = diff.inline("café", "cafe")
+    nx.test.expect(sp.a).to_equal({ { 3, 5 } })
+    nx.test.expect(sp.b).to_equal({ { 3, 4 } })
+  end)
+
+  nx.test.it("inline coalesces adjacent changed characters into one span", function()
+    -- "abcd" → "axyd": 'bc' → 'xy' is one contiguous edit, not two single-char spans.
+    local sp = diff.inline("abcd", "axyd")
+    nx.test.expect(sp.a).to_equal({ { 1, 3 } })
+    nx.test.expect(sp.b).to_equal({ { 1, 3 } })
   end)
 end)

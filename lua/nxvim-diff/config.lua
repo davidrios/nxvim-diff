@@ -38,7 +38,10 @@ local DEFAULTS = {
   sync_cursor = true, -- keep the panes' cursor row aligned
   wrap = false, -- soft-wrap inside the panes (off → columns line up, leftcol syncs)
   inline = true, -- highlight the changed spans within a changed line (DiffText)
-  signs = true, -- show a sign-column marker per hunk (+/~/-)
+  -- Per-hunk sign-column markers (+/~/-). DEFERRED — off until nxvim's core can paint a
+  -- gutter sign from an extmark (today it neither stores `sign_text` nor renders one);
+  -- the option stays so the surface is stable. See docs/plans Phase 4.
+  signs = false,
   fillchar = "-", -- the glyph drawn on a filler (alignment) row; "" for blank
   layout = "auto", -- "auto" (by pane count), "vertical" (side-by-side), or "horizontal"
   keymaps = DEFAULT_KEYMAPS,

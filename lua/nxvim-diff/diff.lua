@@ -140,11 +140,75 @@ function M.project(rows, side)
   return out
 end
 
+-- Split `s` into its UTF-8 characters, returning each char's 0-based byte start (and the
+-- line's total byte length). Falls back to one entry per byte for invalid UTF-8 so a
+-- binary / mojibake line still diffs (byte-wise) instead of erroring inside `utf8.codes`.
+local function char_starts(s)
+  local starts = {}
+  local ok = pcall(function()
+    for p in utf8.codes(s) do
+      starts[#starts + 1] = p - 1 -- utf8.codes yields 1-based byte positions
+    end
+  end)
+  if not ok then
+    starts = {}
+    for p = 0, #s - 1 do
+      starts[#starts + 1] = p
+    end
+  end
+  return starts, #s
+end
+
+-- The substring of each character (byte end = the next char's start, or the line length),
+-- so the LCS compares whole characters rather than bytes (no split multibyte sequences).
+local function chars_of(s, starts, total)
+  local out = {}
+  for i = 1, #starts do
+    out[i] = s:sub(starts[i] + 1, (starts[i + 1] or total))
+  end
+  return out
+end
+
+-- Coalesce the set of changed character indices into half-open, 0-based BYTE ranges
+-- `{ {from, to}, … }` — adjacent changed characters merge into one span (so a run of
+-- edited characters is one DiffText extmark, not one per character).
+local function coalesce(changed, starts, total)
+  local ranges, i, n = {}, 1, #starts
+  while i <= n do
+    if changed[i] then
+      local from, j = starts[i], i
+      while j <= n and changed[j] do
+        j = j + 1
+      end
+      ranges[#ranges + 1] = { from, starts[j] or total }
+      i = j
+    else
+      i = i + 1
+    end
+  end
+  return ranges
+end
+
 -- inline(a_line, b_line) → the changed character spans within a `change` row, as
--- { a = {{from,to}...}, b = {{from,to}...} } byte ranges for DiffText highlighting.
--- Phase 4 (see docs/plans); fail loud until then rather than silently skipping.
-function M.inline(_a_line, _b_line)
-  error("nxvim-diff.diff.inline: intra-line diff not implemented yet (Phase 4)")
+-- { a = {{from,to}...}, b = {{from,to}...} } half-open 0-based BYTE ranges, ready to drop
+-- into `DiffText` extmarks (col / end_col). A character-level LCS of the two lines: the
+-- characters NOT on the common subsequence are the edits — deletions land on the `a`
+-- side, insertions on the `b` side. O(len_a · len_b) per row (lines are short); the
+-- caller gates it behind `config.inline`.
+function M.inline(a_line, b_line)
+  a_line, b_line = a_line or "", b_line or ""
+  local sa, la = char_starts(a_line)
+  local sb, lb = char_starts(b_line)
+  local ops = lcs_ops(chars_of(a_line, sa, la), chars_of(b_line, sb, lb))
+  local changed_a, changed_b = {}, {}
+  for _, op in ipairs(ops) do
+    if op.op == "del" then
+      changed_a[op.a] = true
+    elseif op.op == "add" then
+      changed_b[op.b] = true
+    end
+  end
+  return { a = coalesce(changed_a, sa, la), b = coalesce(changed_b, sb, lb) }
 end
 
 return M

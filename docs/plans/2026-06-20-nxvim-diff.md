@@ -138,11 +138,28 @@ and unlike `nowrap` the core defaults `scrollanim` *on*). The panes therefore sn
 lockstep with no animation. Covered by `sync_spec`'s "disables scroll animation on the
 panes" case, plus the editor repo's `window_local_scrollanim_*` rendering tests.
 
-## Phase 4 — Hunk nav polish, intra-line, signs
+## Phase 4 — Hunk nav polish, intra-line ✅ (signs deferred)
 
-`]c`/`[c`/`[C`/`]C` are wired through `nav` already — verify wrap-around + "no
-changes". Implement `diff.inline(a, b)` (char LCS) → `DiffText` spans on `change` rows
-when `config.inline`. Sign-column markers per hunk when `config.signs`.
+- **Hunk nav** — `]c`/`[c`/`[C`/`]C` were already wired through `nav`; verified
+  wrap-around (next past the last hunk → first; prev before the first → last) and the
+  "no changes" path (no jump) in `test/nav_spec.lua`, driven by a fake session so the
+  pure seek/jump math is exercised without the editor.
+- **Intra-line `DiffText`** — `diff.inline(a, b)` is a **character-level** LCS (whole
+  UTF-8 characters, not bytes, with an invalid-UTF-8 byte-wise fallback) returning each
+  side's changed spans as half-open 0-based **byte** ranges, adjacent edits coalesced.
+  `view.open` computes it once per `change` row (gated on `config.inline`) and stashes
+  each side's ranges on its projection entry; `pane_marks` paints them as `DiffText`
+  extmarks at `TEXT_PRIORITY` (above the whole-line tint's `LINE_PRIORITY`). Covered by
+  `diff_spec` (the pure spans, incl. the multibyte case) and `decor_spec` (the rendered
+  extmarks + `inline = false`).
+- **Signs — DEFERRED.** Per-hunk gutter signs (`+`/`~`/`-`) can't be honored yet:
+  nxvim's core neither **stores** `sign_text` on an extmark (`VirtDecor` carries only
+  `virt_text`/`virt_lines`) nor **paints** a gutter sign from one — and the server's
+  extmark mirror doesn't round-trip the decoration payload, so a placed sign is invisible
+  *and* unobservable after a tick. Rather than ship dead, untestable code, the
+  `config.signs` option stays (default `false`, documented) and the feature waits on a
+  core gutter-sign capability (a sibling of the `'scrollanim'` core change). Until then a
+  changed line is conveyed by its tint + `DiffText`.
 
 ## Phase 5 — git polish
 

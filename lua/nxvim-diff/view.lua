@@ -63,18 +63,46 @@ local function project_text(proj, lines)
   return out
 end
 
--- Whole-line tint marks for one pane: DiffAdd/DiffDelete/DiffChange on the changed
--- real lines (a blank filler row is left untinted in Phase 2; fillchar styling is
--- Phase 4).
-local function pane_marks(proj, text)
+-- The extmark priorities: the whole-line tint sits under the intra-line DiffText spans
+-- so the changed characters stay visible on top of the changed-line background.
+local LINE_PRIORITY = 100
+local TEXT_PRIORITY = 200
+
+-- Decoration marks for one pane (`config` gates the optional layers):
+--   * whole-line DiffAdd/DiffDelete/DiffChange tint on every changed real row,
+--   * `DiffText` spans over the changed characters of a `change` row (`config.inline`,
+--     from `entry.spans` the caller stashed — half-open 0-based byte ranges).
+-- A blank filler row carries no decoration (it's the alignment gap). Per-hunk gutter
+-- signs are deferred (`config.signs`): nxvim's core neither stores `sign_text` on an
+-- extmark nor paints a gutter sign from one yet, so there's nothing to render — see the
+-- plan's Phase 4 note.
+local function pane_marks(proj, text, config)
   local marks = {}
   for i, e in ipairs(proj) do
     if not e.filler then
+      local line0 = i - 1
       local hl = highlights.hl_for(e.kind)
       if hl then
-        local line0 = i - 1
-        marks[#marks + 1] =
-          { line = line0, col = 0, end_row = line0, end_col = #(text[i] or ""), hl_group = hl }
+        marks[#marks + 1] = {
+          line = line0,
+          col = 0,
+          end_row = line0,
+          end_col = #(text[i] or ""),
+          hl_group = hl,
+          priority = LINE_PRIORITY,
+        }
+      end
+      if config.inline and e.spans then
+        for _, span in ipairs(e.spans) do
+          marks[#marks + 1] = {
+            line = line0,
+            col = span[1],
+            end_row = line0,
+            end_col = span[2],
+            hl_group = "DiffText",
+            priority = TEXT_PRIORITY,
+          }
+        end
       end
     end
   end
@@ -96,7 +124,7 @@ local function finish(session, api)
   end, { tries = 200, interval = 5, message = "nxvim-diff: panes never mounted" })
     :next(function()
       for _, p in ipairs(session.panes) do
-        p.view:set_decor(session.ns, pane_marks(p.proj, p.text))
+        p.view:set_decor(session.ns, pane_marks(p.proj, p.text, session.config))
         local win = p.view:winid()
         pcall(function()
           if not session.config.wrap then
@@ -149,6 +177,20 @@ function M.open(root, spec)
     local text = project_text(proj, contents[i])
     v:set_lines(text)
     panes[i] = { view = v, label = pane.label, side = SIDES[i], proj = proj, text = text }
+  end
+
+  -- Intra-line spans (Phase 4): for each `change` row compute the changed character
+  -- ranges once and stash each side's byte ranges on that side's projection entry (proj
+  -- is 1:1 with rows), so pane_marks can paint `DiffText` over the edited characters.
+  -- Gated on `config.inline` since it's an O(len²) per-row character diff.
+  if root.config.inline then
+    for k, r in ipairs(result.rows) do
+      if r.kind == "change" then
+        local sp = diff.inline(contents[1][r.a], contents[2][r.b])
+        panes[1].proj[k].spans = sp.a
+        panes[2].proj[k].spans = sp.b
+      end
+    end
   end
 
   local session = {
