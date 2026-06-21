@@ -161,11 +161,36 @@ panes" case, plus the editor repo's `window_local_scrollanim_*` rendering tests.
   core gutter-sign capability (a sibling of the `'scrollanim'` core change). Until then a
   changed line is conveyed by its tint + `DiffText`.
 
-## Phase 5 — git polish
+## Phase 5 — git polish ✅ (done)
 
-`:NxDiffGit` is HEAD-only by design. Verify the not-a-repo / no-file / file-not-in-HEAD
-messages read well. Richer comparisons (a rev, the index, rev..rev) stay Lua-only: a
-caller builds a spec with `lines = git.to_lines(...)` and calls `open()`.
+`:NxDiffGit` is HEAD-only by design. Verifying the error paths surfaced a real bug, not
+just wording:
+
+- **git ran in the wrong directory.** `git_head` passed `cwd = getcwd()` (the editor's
+  working dir), so a file opened from outside `:pwd` was diffed against *that* repo, not
+  the file's own — e.g. a `/tmp/x` file got matched to the repo you launched from. Fixed
+  to `cwd = fnamemodify(file, ":h")` (the file's directory). The "not a git repository"
+  test is the regression guard: with the old cwd it would have found the launch repo and
+  failed at `git show` instead.
+- **Nameless-buffer detection.** `expand("%:p")` resolves an empty name to the cwd, so a
+  scratch buffer looked like a real file. Now gated on `expand("%") ~= ""`.
+- **Clean messages.** `head_spec` rejects with bare, position-free strings
+  (`error(msg, 0)`): "not a git repository" / "this buffer has no file to diff" / "no
+  HEAD version of <rel>". The `:NxDiffGit` path's `run` wrapper adds the single
+  "nxvim-diff: " prefix, so there's no more `git.lua:NN: nxvim-diff: nxvim-diff: …`
+  double-prefix-with-position pile-up.
+
+Covered live in `test/git_spec.lua`: a real init'd repo (HEAD read via `head_spec`), plus
+not-a-repo / nameless / not-in-HEAD. Richer comparisons (a rev, the index, rev..rev) stay
+Lua-only: a caller builds a spec with `lines = git.to_lines(...)` and calls `open()`.
+
+> Two **core** fixes (in the editor repo) made the above clean rather than worked-around:
+> (1) `expand("%:p")` now returns `""` for a buffer with no file instead of resolving the
+> empty name against the cwd (so a scratch buffer no longer looks like a real file at
+> `<cwd>`), and (2) the per-convergence refresh now updates the Lua **current-buffer
+> snapshot** (`nx._cur_buf`), not just the content mirror — so `expand("%")` right after
+> `:edit` reads the file's name instead of a stale empty one. With those, `git_head` just
+> reads `expand("%:p")` and the tests `:edit` normally (no touch dance).
 
 ## Phase 6 — 3-way diff / merge (`:NxDiffConflict` rendering)
 

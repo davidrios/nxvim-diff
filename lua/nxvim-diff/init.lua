@@ -107,11 +107,16 @@ end
 
 -- git_head() — open the current file's working tree vs git HEAD. Backs :NxDiffGit, and
 -- callable from Lua. Builds the ctx the git module expects, awaits its spec, opens.
+--
+-- `cwd` is the FILE's directory, not the editor's working directory: git must run inside
+-- the repo the file actually lives in (you may be editing a file outside `:pwd`).
+-- `expand("%:p")` is "" for a buffer with no file, which head_spec rejects loudly.
 function M.git_head()
+  local file = vim.fn.expand("%:p")
   local ctx = {
-    file = vim.fn.expand("%:p"),
+    file = file,
     bufnr = vim.api.nvim_get_current_buf(),
-    cwd = vim.fn.getcwd(),
+    cwd = (file ~= "" and vim.fn.fnamemodify(file, ":h")) or vim.fn.getcwd(),
   }
   run(function()
     M.open(nx.await(require("nxvim-diff.git").head_spec(ctx)))

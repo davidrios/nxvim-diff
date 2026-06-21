@@ -36,11 +36,15 @@ end
 
 -- head_spec(ctx) — a PROMISE of a spec: the current file at HEAD on the left
 -- (read-only), the live working-tree buffer on the right (editable). `ctx` =
--- { file = <abs path>, bufnr = <n>, cwd = <dir> } (the shape init.lua builds).
+-- { file = <abs path>, bufnr = <n>, cwd = <file's dir> } (the shape init.lua builds).
+--
+-- Failures reject with a bare, position-free message (`error(msg, 0)`): the `:NxDiffGit`
+-- path's `run` wrapper adds the single "nxvim-diff: " prefix and notifies, so prefixing
+-- here too (or letting Lua tack on a "git.lua:NN:" prefix) would double up.
 function M.head_spec(ctx)
   return nx.async(function()
     if ctx.file == nil or ctx.file == "" then
-      error("nxvim-diff: the current window has no file to diff")
+      error("this buffer has no file to diff", 0)
     end
 
     local top = nx.await(nx.run({
@@ -49,7 +53,7 @@ function M.head_spec(ctx)
       cwd = ctx.cwd,
     }))
     if top.code ~= 0 then
-      error("nxvim-diff: not a git repository")
+      error("not a git repository", 0)
     end
     local toplevel = M.to_lines(top.stdout)[1] or ctx.cwd
     local rel = M.repo_relative(ctx.file, toplevel)
@@ -60,7 +64,9 @@ function M.head_spec(ctx)
       cwd = toplevel,
     }))
     if show.code ~= 0 then
-      error(("nxvim-diff: `git show HEAD:%s` failed: %s"):format(rel, show.stderr))
+      -- The usual cause is a new / untracked file (no version exists at HEAD); an empty
+      -- repo with no commits lands here too. Either way: there's no HEAD side to diff.
+      error(("no HEAD version of %s"):format(rel), 0)
     end
 
     local ft = vim.bo[ctx.bufnr] and vim.bo[ctx.bufnr].filetype or nil
