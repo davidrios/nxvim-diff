@@ -32,10 +32,12 @@ This repo is a **scaffold with a working, tested core**. Implemented and covered
 - the pure **conflict-marker parser** (`conflict.lua`) — diff3 / plain-merge → sides,
 - the **public API** — `open`, `validate_spec`, and the git HEAD-spec helpers.
 
-The on-screen **pane rendering and scroll-sync** are built out across Phases 2–3 of
-[`docs/plans/2026-06-20-nxvim-diff.md`](docs/plans/2026-06-20-nxvim-diff.md); until
-then opening a diff resolves its content and then fails loud at the render step, on
-purpose (no silent stubs).
+Two-pane **rendering works** (Phase 2): a diff opens side-by-side in a dedicated tab,
+projected to equal height with alignment fillers and DiffAdd/DiffDelete/DiffChange
+tints. Still building out (see
+[`docs/plans/2026-06-20-nxvim-diff.md`](docs/plans/2026-06-20-nxvim-diff.md)): live
+scroll/cursor **sync** (Phase 3), intra-line `DiffText` + hunk signs (Phase 4), and the
+**3-way** layout for diff3 conflicts (Phase 6) — a 3-pane spec fails loud until then.
 
 ## Install
 

@@ -40,6 +40,10 @@ layer needs:
   handler).
 - **`nx.win.set_topline` / `set_leftcol` / `set_cursor` / `restview`** — explicit-window
   setters that work from inside `nx.win.call`.
+- **`nx.view:mount({ tab = true })`** — mount a view as the sole window of a fresh tab
+  (no split, no leftover empty window; closing it closes the tab). Added so the diff
+  lays out its panes in one deterministic tick (`A:mount{tab}` + `B:mount{split}`,
+  both view-ops) instead of a `tabnew`/split/`:only` cross-tick dance.
 - **`nx.buf.search(buf, pattern, opts)`** — native buffer search over the mirror
   (plain / pcre / vim engines, start position, captures). `:NxDiffConflict` uses it to
   locate the conflict region (start marker → end marker) instead of scanning lines in
@@ -67,9 +71,20 @@ Repo skeleton under `~/work/nxvim-plugins/nxvim-diff`, matching the sibling plug
   helpers), `config_spec`.
 - **Follow-up:** swap the O(n·m) LCS for histogram/Myers if large files prove slow.
 
-## Phase 2 — Two-pane rendering
+## Phase 2 — Two-pane rendering ✅ (done)
 
-Make `view.open(root, spec)` real (today it fails loud). Steps:
+`view.open(root, spec)` renders a 2-pane diff (a 3-pane spec fails loud → Phase 6):
+content resolution (`lines`/`buf`/`path`), `diff.compute` + `project`, a dedicated tab
+laid out side-by-side (built across ticks so the ex-cmd/view-op ordering is
+deterministic; the new tab's empty window is dropped with `:only`), each read-only side
+an `nx.view` set to the projected lines (filler → blank row), whole-line
+DiffAdd/DiffDelete/DiffChange tints via `set_decor`, `nowrap`, and `keymap.install`.
+`close()` is a `:tabclose` + `view:close()`. The session exposes `cursor_row`/`goto_row`
+(basic, pre-sync) and `reopen`. Live-verified in `test/render_spec.lua` (layout, clean
+2-window tab, equal-height projection with fillers, `path`-pane reads). Deferred to
+later phases: visible `fillchar` on filler rows (Phase 4), 3-way (Phase 6).
+
+Original step list (for reference):
 
 1. **Content resolution** — `pane.lines` as-is; `pane.buf` → `nvim_buf_get_lines`;
    `pane.path` → `nx.await(nx.fs.read)` split on `\n`.
