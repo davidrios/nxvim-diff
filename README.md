@@ -5,7 +5,7 @@ A Meld-style **side-by-side diff viewer** for
 changed/added/removed lines tinted, aligned with filler rows, navigable hunk-by-hunk.
 
 It is built entirely on the native `nx.*` plugin API (ADR 0002): the read-only sides
-are [`nx.view`](https://github.com/davidrios/nxvim) surfaces, every tint / filler /
+are [`nx.view`](https://github.com/davidrios/nxvim) surfaces, every line tint and
 intra-line span is an extmark, and the panes stay in lockstep through the editor's
 `WinScrolled` event plus `nx.win.set_topline` / `set_leftcol` / `set_cursor`.
 
@@ -18,27 +18,38 @@ only two commands — the long tail lives in the Lua API, where it belongs.
  1  fn main() {                   │ 1  fn main() {
  2      let x = compute();        │ 2      let x = compute();
 ~3      println!("{}", x);        │~3      eprintln!("{}", x);
- 4  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄  │+4      log::info!("done");
- 5  }                             │ 5  }
+                                  │+4      log::info!("done");
+ 4  }                             │ 5  }
 ```
+
+(`~` a changed line — its edited chars are tinted `DiffText`; `+` an added line; the
+blank left row is the alignment filler opposite it.)
 
 ## Status
 
-This repo is a **scaffold with a working, tested core**. Implemented and covered by
+A working **two-pane diff viewer**, plus the pure cores that feed it — all covered by
 `nxvim --test-plugin .`:
 
-- the configuration (`config.lua`) — merge + validation,
-- the pure LCS **diff engine** (`diff.lua`) — alignment, hunks, per-pane projection,
-- the pure **conflict-marker parser** (`conflict.lua`) — diff3 / plain-merge → sides,
-- the **public API** — `open`, `validate_spec`, and the git HEAD-spec helpers.
+- **Rendering** — a diff opens side-by-side in a dedicated tab, projected to equal
+  height with alignment fillers and DiffAdd/DiffDelete/DiffChange line tints.
+- **Scroll / cursor sync** — the panes' viewports and cursor row stay locked together.
+- **Intra-line highlights** — the edited characters of a changed line are tinted with
+  `DiffText` (a character-level diff).
+- **Hunk navigation** — `]c` / `[c` / `]C` / `[C`, with wrap-around.
+- **Git source** — `:NxDiffGit` diffs the current file against HEAD, run inside the
+  file's own repo, with clear not-a-repo / no-file / not-in-HEAD messages.
+- **Pure cores** — the LCS **diff engine** (alignment, hunks, projection), the
+  **conflict-marker parser** (diff3 / plain-merge → sides), config merge/validation, and
+  spec validation.
 
-Two-pane **rendering works** (Phase 2): a diff opens side-by-side in a dedicated tab,
-projected to equal height with alignment fillers and DiffAdd/DiffDelete/DiffChange
-tints, with the panes locked in **scroll/cursor sync** (Phase 3) and the edited
-characters of a changed line highlighted with `DiffText` (Phase 4). Still building out
-(see [`docs/plans/2026-06-20-nxvim-diff.md`](docs/plans/2026-06-20-nxvim-diff.md)):
-per-hunk gutter **signs** (deferred — needs core support), git polish (Phase 5), and the
-**3-way** layout for diff3 conflicts (Phase 6) — a 3-pane spec fails loud until then.
+Still building out (see
+[`docs/plans/2026-06-20-nxvim-diff.md`](docs/plans/2026-06-20-nxvim-diff.md)):
+
+- the **3-way** layout for diff3 conflicts (`:NxDiffConflict`) — the parser is done, but
+  laying out three panes is Phase 6, so a 3-pane spec currently **fails loud**;
+- per-hunk gutter **signs** (`signs`) and **filler glyphs** (`fillchar`) — deferred until
+  nxvim's core can paint an extmark gutter sign / filler row; the options exist but are
+  inert (a changed line is conveyed by its tint + `DiffText`, a filler by a blank row).
 
 ## Install
 
@@ -67,8 +78,9 @@ There are exactly two — by design:
 ```
 
 `:NxDiffConflict` parses the file's `<<<<<<< / ||||||| / ======= / >>>>>>>` markers: a
-diff3-style file (base section present) opens as a true 3-way, a plain-merge file as a
-2-way ours/theirs.
+diff3-style file (base section present) becomes a 3-way ours/base/theirs, a plain-merge
+file a 2-way ours/theirs. **Note:** the 3-pane *layout* is still pending (Phase 6), so a
+diff3 conflict fails loud at render for now; the 2-way merge case renders today.
 
 Inside a diff (default, buffer-local bindings):
 
@@ -123,7 +135,7 @@ require("nxvim-diff").setup({
   wrap = false,          -- soft-wrap inside panes (off → columns align, leftcol syncs)
   inline = true,         -- highlight the changed spans within a changed line (DiffText)
   signs = false,         -- per-hunk sign-column markers (deferred — needs core support)
-  fillchar = "-",        -- glyph drawn on an alignment filler row ("" for blank)
+  fillchar = "-",        -- glyph for a filler row (deferred — fillers render blank today)
   layout = "auto",       -- "auto" | "vertical" | "horizontal"
   keymaps = { ... },     -- key → action (see config.ACTIONS); false disables a key
   highlights = { ... },  -- Diff* / NxDiff* group overrides
@@ -145,8 +157,11 @@ The plugin carries a Lua test suite (`test/*_spec.lua`) built on nxvim's native
 nxvim --test-plugin .
 ```
 
-`config_spec` covers merge/validation, `diff_spec` the engine, `conflict_spec` the
-marker parser, and `api_spec` the public `validate_spec` + git helpers.
+The **pure** specs need no editor state: `config_spec` (merge/validation), `diff_spec`
+(the engine + the intra-line char-diff), `conflict_spec` (the marker parser), `nav_spec`
+(hunk navigation), and `api_spec` (`validate_spec` + git helpers). The **live** specs
+drive a real diff: `render_spec` (pane layout), `sync_spec` (scroll/cursor sync),
+`decor_spec` (the line tints + `DiffText` spans), and `git_spec` (`:NxDiffGit`).
 
 ## License
 
