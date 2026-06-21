@@ -22,7 +22,10 @@ function M.to_lines(s)
   return out
 end
 
--- repo_relative(file, toplevel) — `file` expressed relative to the repo root.
+-- repo_relative(file, toplevel) — `file` expressed relative to the repo root, by simple
+-- prefix strip. A standalone helper for a caller building its own spec; `head_spec` no
+-- longer uses it (it asks git for the path via `--show-prefix`, which is symlink-safe —
+-- a plain string strip breaks when `toplevel` is a resolved path and `file` is not).
 function M.repo_relative(file, toplevel)
   local base = toplevel
   if base:sub(-1) ~= "/" then
@@ -47,21 +50,28 @@ function M.head_spec(ctx)
       error("this buffer has no file to diff", 0)
     end
 
-    local top = nx.await(nx.run({
+    -- The file's path RELATIVE TO THE REPO ROOT, the form `git show HEAD:<rel>` wants.
+    -- `--show-prefix` (run in the file's dir) is the repo-root→cwd path as git itself
+    -- resolves it, so prefixing the file's basename onto it sidesteps any string math
+    -- against an absolute path — and crucially survives a symlinked dir (e.g. macOS's
+    -- /var → /private/var, where `--show-toplevel` returns the real path while ctx.file
+    -- keeps the symlink, so a prefix-strip would fail and leave an absolute, unusable
+    -- `HEAD:/abs/path`). Empty prefix ⇒ the file sits at the repo root.
+    local pre = nx.await(nx.run({
       cmd = "git",
-      args = { "rev-parse", "--show-toplevel" },
+      args = { "rev-parse", "--show-prefix" },
       cwd = ctx.cwd,
     }))
-    if top.code ~= 0 then
+    if pre.code ~= 0 then
       error("not a git repository", 0)
     end
-    local toplevel = M.to_lines(top.stdout)[1] or ctx.cwd
-    local rel = M.repo_relative(ctx.file, toplevel)
+    local prefix = M.to_lines(pre.stdout)[1] or ""
+    local rel = prefix .. (ctx.file:match("[^/]+$") or ctx.file)
 
     local show = nx.await(nx.run({
       cmd = "git",
       args = { "show", "HEAD:" .. rel },
-      cwd = toplevel,
+      cwd = ctx.cwd,
     }))
     if show.code ~= 0 then
       -- The usual cause is a new / untracked file (no version exists at HEAD); an empty
