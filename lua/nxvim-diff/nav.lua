@@ -4,10 +4,9 @@
 -- alignment row) and drives the editor only through the session's `goto_row` method
 -- and `nx.notify`, so it is ready now and exercised once view.lua builds a session.
 --
--- `attach_sync` (the WinScrolled-driven scroll/cursor mirror) is the Phase 3 piece —
--- it depends on the live window ids the session owns, so it is a documented fail-loud
--- skeleton until then. It is what consumes the editor's new `WinScrolled` event and
--- `nx.win.set_topline` / `set_leftcol` / `set_cursor` seam.
+-- `attach_sync` (the WinScrolled-driven scroll/cursor mirror) keeps the panes' viewports
+-- and cursor row locked. It consumes the editor's `WinScrolled` / `CursorMoved` events
+-- and the `nx.win.set_topline` / `set_leftcol` / `set_cursor` seam; see its own header.
 
 local M = {}
 
@@ -70,14 +69,103 @@ function M.close(_session)
   require("nxvim-diff").close()
 end
 
--- attach_sync(session) — keep the panes' viewports + cursor row locked. On the active
--- pane's `WinScrolled` (the editor event the companion core change adds), mirror its
--- topline (and leftcol, when nowrap) onto the other panes via nx.win.set_topline /
--- set_leftcol; on cursor move, mirror the row via nx.win.set_cursor. A re-entrancy
--- guard (a `session._syncing` flag) breaks the echo a programmatic scroll would cause.
--- Returns a detach function stored as `session._detach`. Phase 3.
-function M.attach_sync(_session)
-  error("nxvim-diff.nav.attach_sync: pane scroll/cursor sync not implemented yet (Phase 3)")
+-- attach_sync(session) — keep the panes' viewports + cursor row locked together, the
+-- way Meld scrollbinds its sides. Registers two autocmds (dropped by the returned
+-- detach):
+--
+--   * `WinScrolled` — when one pane scrolls, copy its `topline` (and `leftcol`, unless
+--     wrapping) onto the other panes via nx.win.set_topline / set_leftcol.
+--   * `CursorMoved` — when the focused pane's cursor moves, mirror its line onto the
+--     others via nx.win.set_cursor. The projection is 1:1 (a pane's view line number
+--     IS the alignment row, fillers included), so the aligned cursor is simply the
+--     same line on every pane — no cross-filler remapping needed.
+--
+-- Breaking the echo: a programmatic `set_topline` re-fires `WinScrolled` for the moved
+-- window on the next diff (the core rebases its scroll baseline to the *pre-callback*
+-- offsets on purpose, so the plugin owns its own loop). The mirror is therefore
+-- compare-and-set — a pane already at the source's topline is skipped — so that
+-- re-fire produces no new ops and the cascade dies out after one harmless round. The
+-- `session._syncing` flag is the belt-and-suspenders synchronous guard. Cursor mirroring
+-- needs no such care: setting a *non-focused* window's cursor neither steals focus nor
+-- re-fires `CursorMoved` (only the focused window's motion does).
+function M.attach_sync(session)
+  -- The diff pane showing window `win` (nil if `win` isn't one of our panes).
+  local function pane_for_win(win)
+    for _, p in ipairs(session.panes) do
+      if p.view:winid() == win then
+        return p
+      end
+    end
+    return nil
+  end
+
+  -- The mounted windows of every pane other than `win`.
+  local function other_wins(win)
+    local out = {}
+    for _, p in ipairs(session.panes) do
+      local w = p.view:winid()
+      if w and w ~= win then
+        out[#out + 1] = w
+      end
+    end
+    return out
+  end
+
+  local ids = {}
+
+  if session.config.sync_scroll then
+    ids[#ids + 1] = nx.autocmd.create("WinScrolled", {
+      callback = function(args)
+        if session._syncing then
+          return
+        end
+        local win = tonumber(args.match)
+        if not win or not pane_for_win(win) then
+          return -- a scroll in some unrelated window — ignore
+        end
+        session._syncing = true
+        local src = nx.win.call(win, nx.win.saveview)
+        for _, w in ipairs(other_wins(win)) do
+          local cur = nx.win.call(w, nx.win.saveview)
+          if cur.topline ~= src.topline then
+            nx.win.set_topline(w, src.topline)
+          end
+          if not session.config.wrap and cur.leftcol ~= src.leftcol then
+            nx.win.set_leftcol(w, src.leftcol)
+          end
+        end
+        session._syncing = false
+      end,
+    })
+  end
+
+  if session.config.sync_cursor then
+    ids[#ids + 1] = nx.autocmd.create("CursorMoved", {
+      callback = function()
+        if session._syncing then
+          return
+        end
+        local win = nx.win.current()
+        if not pane_for_win(win) then
+          return
+        end
+        local row = session:cursor_row()
+        session._syncing = true
+        for _, w in ipairs(other_wins(win)) do
+          nx.win.set_cursor(w, row)
+        end
+        session._syncing = false
+      end,
+    })
+  end
+
+  session._detach = function()
+    for _, id in ipairs(ids) do
+      pcall(nx.autocmd.del, id)
+    end
+    session._detach = nil
+  end
+  return session._detach
 end
 
 return M

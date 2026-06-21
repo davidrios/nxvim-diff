@@ -26,6 +26,7 @@
 local diff = require("nxvim-diff.diff")
 local highlights = require("nxvim-diff.highlights")
 local keymap = require("nxvim-diff.keymap")
+local nav = require("nxvim-diff.nav")
 
 local M = {}
 
@@ -80,30 +81,40 @@ local function pane_marks(proj, text)
   return marks
 end
 
--- Decorate + finalize once every pane's backing buffer exists (a tick after mount).
+-- Decorate + finalize once every pane has both its backing buffer AND its window. The
+-- window id lags the buffer by a tick (it only exists after the mount op drains), and
+-- the per-window options below — `nowrap`, and especially `noscrollanim`, which the core
+-- defaults *on* — must reach a real window to take effect, so the gate waits for both.
 local function finish(session, api)
   nx.wait_for(function()
     for _, p in ipairs(session.panes) do
-      if not p.view:bufnr() then
+      if not p.view:bufnr() or not p.view:winid() then
         return false
       end
     end
     return true
-  end, { tries = 200, interval = 5, message = "nxvim-diff: pane buffers never appeared" })
+  end, { tries = 200, interval = 5, message = "nxvim-diff: panes never mounted" })
     :next(function()
       for _, p in ipairs(session.panes) do
         p.view:set_decor(session.ns, pane_marks(p.proj, p.text))
         local win = p.view:winid()
-        if win and not session.config.wrap then
-          pcall(function()
+        pcall(function()
+          if not session.config.wrap then
             vim.wo[win].wrap = false
-          end)
-        end
+          end
+          -- Only the focused pane can animate a scroll; a synced (non-focused) pane is
+          -- moved with a crisp `set_topline`, so it would jump while the focused pane
+          -- slides — a visible desync. Disable scroll animation on every diff pane so
+          -- they move in lockstep. (Per-window override; the global `'scrollanim'` and
+          -- other windows are untouched, and it's restored when the view's window goes.)
+          vim.wo[win].scrollanim = false
+        end)
         if type(session.config.on_attach) == "function" then
           pcall(session.config.on_attach, session, api, p.view:bufnr())
         end
       end
       keymap.install(session, api)
+      nav.attach_sync(session) -- scrollbind the panes (Phase 3)
       session.panes[1].view:focus()
       session._ready = true
     end)
@@ -148,6 +159,7 @@ function M.open(root, spec)
     ns = nx.ns.create("nxvim-diff"),
     panes = panes,
     _ready = false,
+    _syncing = false, -- re-entrancy guard for the scroll/cursor mirror (nav.attach_sync)
   }
 
   -- The focused pane's current alignment row (projection is 1:1 with the rows, so the
@@ -162,8 +174,9 @@ function M.open(root, spec)
     return self.panes[1].view:line() or 1
   end
 
-  -- Move every pane to alignment `row` (basic sync; the WinScrolled-driven live sync
-  -- is Phase 3), then restore focus to the first pane.
+  -- Move every pane to alignment `row` (a hunk jump sets all panes explicitly so it
+  -- works regardless of `sync_cursor`; live scroll/cursor sync is nav.attach_sync),
+  -- then restore focus to the first pane.
   function session:goto_row(row)
     for _, p in ipairs(self.panes) do
       p.view:set_cursor(row)

@@ -101,12 +101,42 @@ Original step list (for reference):
 - **Acceptance:** the `<leader>du` caps demo (examples) and `:NxDiffGit` on a changed
   tracked file render side-by-side, tinted, aligned.
 
-## Phase 3 — Scroll & cursor sync
+## Phase 3 — Scroll & cursor sync ✅ (done)
 
-`nav.attach_sync(session)` (today fails loud): on a pane's `WinScrolled`, mirror
-`topline`/`leftcol` onto the others via `nx.win.set_topline`/`set_leftcol`; on
-`CursorMoved`, mirror the alignment row via `nx.win.set_cursor` (mapping screen row ↔
-alignment row across fillers); a `session._syncing` guard breaks the echo.
+`nav.attach_sync(session)` registers two autocmds (gated on `config.sync_scroll` /
+`sync_cursor`, dropped by `session._detach` on close):
+
+- **`WinScrolled`** — when a pane scrolls, copy its `topline` (and `leftcol`, unless
+  `config.wrap`) onto the other panes via `nx.win.set_topline` / `set_leftcol`.
+- **`CursorMoved`** — when the focused pane's cursor moves, mirror its line onto the
+  others via `nx.win.set_cursor`. Because the projection is 1:1 (a pane's view line
+  number IS the alignment row, fillers included), the aligned cursor is just the same
+  line on every pane — no cross-filler remapping needed.
+
+**Echo handling:** a programmatic `set_topline` re-fires `WinScrolled` for the moved
+window next diff (the core rebases its scroll baseline to the *pre-callback* offsets on
+purpose). The mirror is therefore **compare-and-set** — a pane already at the source's
+topline is skipped — so the re-fire produces no new ops and the cascade dies after one
+harmless round. `session._syncing` is the synchronous-reentry guard. Cursor mirroring
+needs no echo care: setting a *non-focused* window's cursor neither steals focus nor
+re-fires `CursorMoved`.
+
+Live-verified in `test/sync_spec.lua`: vertical scroll mirrors both ways, cursor line
+mirrors, `sync_scroll = false` lets the panes scroll independently, and `close()`
+detaches the autocmds (a later scroll is inert). `view.lua` calls `attach_sync` from
+`finish()` after the panes mount.
+
+**Smooth scrolling.** nxvim animates viewport scrolls (`'scrollanim'`), but only the
+*focused* window animates — and a synced pane is moved with a crisp `set_topline`. So a
+scroll would slide the focused pane while the others snap to the destination: a visible
+desync. Rather than work around it, this needed a core change (made in the editor repo):
+`'scrollanim'` became a **per-window** option (a window-local `Option<bool>` override of
+the global default, resolved in `finalize_scroll_gesture`). `view.lua` sets
+`vim.wo[win].scrollanim = false` on every pane in `finish()` (the gate now also waits for
+each pane's *window* id, not just its buffer, since the option must reach a real window —
+and unlike `nowrap` the core defaults `scrollanim` *on*). The panes therefore snap in
+lockstep with no animation. Covered by `sync_spec`'s "disables scroll animation on the
+panes" case, plus the editor repo's `window_local_scrollanim_*` rendering tests.
 
 ## Phase 4 — Hunk nav polish, intra-line, signs
 
