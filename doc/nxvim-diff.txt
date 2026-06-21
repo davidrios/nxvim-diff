@@ -53,10 +53,19 @@ buffer-local maps on every pane (all rebindable, see |nxvim-diff-config|):
 	[c			Jump to the previous changed hunk.
 	]C			Jump to the last hunk.
 	[C			Jump to the first hunk.
+	co			Resolve the conflict to OURS (conflict diffs only).
+	ct			Resolve the conflict to THEIRS (conflict diffs only).
 	R			Refresh — re-run the source and re-render.
 	q			Close the diff, restoring the prior layout.
 
 Hunk motions wrap around (past the last hunk → the first, and vice versa).
+
+`co` / `ct` only do something on a |:NxDiffConflict| diff: they write the chosen
+side back into the live conflicted buffer — replacing the whole marker block
+(`<<<<<<<` … `>>>>>>>`) with ours / theirs — then close the diff so you're back
+on the resolved file (`:w` to save). They abort loud if the markers moved since
+the diff opened. On a plain (non-conflict) diff they just say there's nothing to
+resolve.
 
 ==============================================================================
 THE 3-WAY (DIFF3) LAYOUT				*nxvim-diff-3way*
@@ -162,8 +171,9 @@ require("nxvim-diff").setup({opts}) merges {opts} over the defaults (shown): >
 <
 `keymaps` is a `key -> action` table merged key-by-key (so you override one
 binding without redeclaring all). An action is a built-in name (`next_hunk`,
-`prev_hunk`, `first_hunk`, `last_hunk`, `refresh`, `close`), a function
-`fn(session, api)`, or `false` to drop a key. An unknown name fails loud.
+`prev_hunk`, `first_hunk`, `last_hunk`, `choose_ours`, `choose_theirs`,
+`refresh`, `close`), a function `fn(session, api)`, or `false` to drop a key. An
+unknown name fails loud.
 
 Highlights use the canonical |hl-DiffAdd| / |hl-DiffDelete| / |hl-DiffChange|
 / |hl-DiffText| groups, so a ported colorscheme themes the viewer unmodified;
@@ -177,10 +187,16 @@ same width and keep lining up. `fillchar` paints its glyph across each blank
 filler (alignment) row — vim's diff-`fillchars` style — or `""` leaves the row
 blank. Both ride core extmark decorations (`sign_text` / `line_fill`).
 
-DEFERRED						*nxvim-diff-deferred*
+CONFLICT RESOLUTION					*nxvim-diff-resolve*
 
-`choose_ours` / `choose_theirs` merge actions (writing a 3-way resolution back
-into the conflicted buffer) are a planned follow-up.
+On a |:NxDiffConflict| diff, `co` (`choose_ours`) and `ct` (`choose_theirs`)
+write the chosen side back into the live conflicted buffer: the whole marker
+block (`<<<<<<<` … `>>>>>>>`) is replaced with that side's lines via the editor's
+`nx.buf.set_lines`, as one undoable edit, and the diff closes so you land back on
+the resolved file. The action guards the write — if the markers are no longer
+where the diff found them (the file changed underneath), it aborts loud and
+writes nothing. Today one conflict block is resolved per diff (the first in the
+file); re-run |:NxDiffConflict| for the next.
 
 ==============================================================================
 PERFORMANCE						*nxvim-diff-perf*

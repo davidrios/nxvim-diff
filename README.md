@@ -38,6 +38,10 @@ covered by `nxvim --test-plugin .`:
 - **Intra-line highlights** — the edited characters of a changed line are tinted with
   `DiffText` (a character-level diff).
 - **Hunk navigation** — `]c` / `[c` / `]C` / `[C`, with wrap-around.
+- **Conflict resolution** — on a `:NxDiffConflict` diff, `co` / `ct` write the chosen
+  side (ours / theirs) back into the live conflicted buffer, replacing the whole marker
+  block as one undoable edit, then close the diff. Built on the editor's `nx.buf.set_lines`
+  (the async buffer-text write); guarded so a moved marker aborts loud.
 - **Gutter signs & fillchar** — `signs` puts a `+`/`~`/`-` gutter sign on each changed
   line (opt-in; every pane reserves the column so they stay aligned), and `fillchar`
   paints a rule across the blank alignment rows (vim's diff-filler style). Both ride
@@ -48,12 +52,11 @@ covered by `nxvim --test-plugin .`:
   merge, hunks, projection), the **conflict-marker parser** (diff3 / plain-merge →
   sides), config merge/validation, and spec validation.
 
-Still building out (see
-[`docs/plans/2026-06-20-nxvim-diff.md`](docs/plans/2026-06-20-nxvim-diff.md)):
-
-- **`choose_ours` / `choose_theirs`** merge actions — writing a hunk's resolution back
-  into the real conflicted buffer (the 3-way *layout* is done; the write-back is a
-  self-contained follow-up).
+All planned phases are complete (see
+[`docs/plans/2026-06-20-nxvim-diff.md`](docs/plans/2026-06-20-nxvim-diff.md)). Conflict
+resolution today writes one block per diff (the first in the file) — re-run
+`:NxDiffConflict` for the next; a cursor→region pick for multi-block files is a possible
+follow-up.
 
 ## Install
 
@@ -91,6 +94,7 @@ Inside a diff (default, buffer-local bindings):
 | --- | --- |
 | `]c` / `[c` | next / previous changed hunk |
 | `]C` / `[C` | last / first hunk |
+| `co` / `ct` | resolve conflict to ours / theirs (`:NxDiffConflict` diffs only) |
 | `R` | refresh |
 | `q` | close |
 

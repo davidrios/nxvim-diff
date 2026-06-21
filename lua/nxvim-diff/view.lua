@@ -17,6 +17,7 @@
 -- ===== the session handle (what open returns) =====
 --   session = {
 --     config, spec, rows, hunks, ns,
+--     resolve,                                  -- conflict write-back map (nil if none)
 --     panes = { { view, label, side = "a"|"b", proj, text }, ... },
 --     _ready,                                   -- true once panes are rendered
 --     goto_row  = function(self, row) end,      -- move every pane to alignment `row`
@@ -263,6 +264,9 @@ function M.open(root, spec)
     hunks = result.hunks,
     ns = nx.ns.create("nxvim-diff"),
     panes = panes,
+    -- The conflict write-back target (only a `:NxDiffConflict` spec carries it); the
+    -- `choose_*` actions read it. Absent on a plain (non-conflict) diff.
+    resolve = spec.resolve,
     _ready = false,
     _syncing = false, -- re-entrancy guard for the scroll/cursor mirror (nav.attach_sync)
   }

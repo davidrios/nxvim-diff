@@ -28,14 +28,23 @@ end
 --   has_conflict, diff3, count,
 --   ours = {...}, theirs = {...}, base = {...}|nil,   -- full reconstructed sides
 --   ours_label, theirs_label,
+--   regions = { { first, last, ours, base?, theirs }, ... },
 -- }. Raises on an unterminated / malformed marker (fail loud, not silent skip).
+--
+-- `regions` is the write-back map the `choose_*` resolution actions need: one entry per
+-- conflict block, carrying the 1-based line numbers of its `<<<<<<<` (`first`) and
+-- `>>>>>>>` (`last`) in `lines`, plus that block's bare section contents (NOT the full
+-- reconstructed sides) — so resolving a hunk means "replace lines first..last with the
+-- chosen section". (The full `ours`/`base`/`theirs` above stay for the rendered diff.)
 function M.parse(lines)
   local ours, base, theirs = {}, {}, {}
   local mode = "common"
   local diff3, count = false, 0
   local ours_label, theirs_label
+  local regions = {}
+  local region -- the in-progress region while inside a conflict block
 
-  for _, line in ipairs(lines) do
+  for i, line in ipairs(lines) do
     local is_start = line:match("^<<<<<<<")
     local is_base = line:match("^|||||||")
     local is_sep = line:match("^=======")
@@ -45,6 +54,7 @@ function M.parse(lines)
       if is_start then
         mode, count = "ours", count + 1
         ours_label = ours_label or strip_label(line, 7)
+        region = { first = i, ours = {}, base = {}, theirs = {} }
       else
         ours[#ours + 1] = line
         base[#base + 1] = line
@@ -59,6 +69,7 @@ function M.parse(lines)
         error("nxvim-diff: malformed conflict (>>>>>>> before =======)")
       else
         ours[#ours + 1] = line
+        region.ours[#region.ours + 1] = line
       end
     elseif mode == "base" then
       if is_sep then
@@ -67,13 +78,19 @@ function M.parse(lines)
         error("nxvim-diff: malformed conflict (>>>>>>> before =======)")
       else
         base[#base + 1] = line
+        region.base[#region.base + 1] = line
       end
     else -- mode == "theirs"
       if is_end then
         mode = "common"
         theirs_label = theirs_label or strip_label(line, 7)
+        region.last = i
+        region.base = diff3 and region.base or nil
+        regions[#regions + 1] = region
+        region = nil
       else
         theirs[#theirs + 1] = line
+        region.theirs[#region.theirs + 1] = line
       end
     end
   end
@@ -91,6 +108,7 @@ function M.parse(lines)
     base = diff3 and base or nil,
     ours_label = ours_label,
     theirs_label = theirs_label,
+    regions = regions,
   }
 end
 
@@ -114,6 +132,10 @@ function M.spec(lines, name)
     title = ("conflict — %s%s"):format(name or "", p.base and " (3-way)" or " (2-way)"),
     panes = panes,
     is_conflict = true,
+    -- The write-back map for `choose_ours` / `choose_theirs` (Phase 6). `regions` carries
+    -- block-relative 1-based line ranges (relative to `lines`); the caller that knows the
+    -- live buffer (`init.conflict`) rebases them to absolute buffer lines and sets `buf`.
+    resolve = { regions = p.regions, diff3 = p.diff3 },
   }
 end
 

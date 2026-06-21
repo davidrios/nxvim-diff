@@ -19,6 +19,11 @@ M.ACTIONS = {
   last_hunk = true, -- jump to the last hunk
   refresh = true, -- re-run the source and re-render
   close = true, -- close the diff session, restoring the prior layout
+  -- Conflict resolution (`:NxDiffConflict` sessions only): write the chosen side back
+  -- into the live buffer, replacing the marker block, then close the diff. On a plain
+  -- diff these just notify "nothing to resolve".
+  choose_ours = true,
+  choose_theirs = true,
 }
 
 -- The built-in default key bindings (normal mode, buffer-local on every diff pane).
@@ -28,6 +33,10 @@ local DEFAULT_KEYMAPS = {
   ["[c"] = "prev_hunk",
   ["[C"] = "first_hunk",
   ["]C"] = "last_hunk",
+  -- `co` / `ct` resolve a conflict to ours / theirs (no-ops with a notice on a plain
+  -- diff). The panes are read-only, so the `c` change operator is inert there anyway.
+  co = "choose_ours",
+  ct = "choose_theirs",
   R = "refresh",
   q = "close",
 }

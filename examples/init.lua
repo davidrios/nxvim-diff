@@ -11,6 +11,7 @@
 --
 -- Inside a diff:
 --   ]c / [c      next / previous changed hunk     [C / ]C   first / last hunk
+--   co / ct      resolve a conflict to ours / theirs (:NxDiffConflict diffs only)
 --   R            refresh         q   close
 -- The panes scroll and move their cursor in lockstep, and a changed line shows the
 -- edited characters highlighted (DiffText).

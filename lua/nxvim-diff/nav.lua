@@ -65,6 +65,62 @@ function M.refresh(session)
   end
 end
 
+-- Resolve the conflict by replacing its marker block in the live buffer with the chosen
+-- side's lines. Only meaningful on a `:NxDiffConflict` session (which carries
+-- `session.resolve`); a plain diff has nothing to write back to and just notifies.
+--
+-- The write goes through the editor's one buffer-text mutation, `nx.buf.set_lines`
+-- (the marker block — lines [first-1, last) 0-based — is replaced wholesale by the
+-- chosen side). It targets the conflicted buffer BY ID, so it doesn't matter that the
+-- diff panes hold focus; the diff is closed first only to return the user to their
+-- resolved file. It is guarded: if the recorded markers are no longer where we left
+-- them (the file changed under us), it aborts loud rather than corrupt the buffer.
+local function resolve(session, side)
+  local r = session.resolve
+  if not r then
+    nx.notify("nxvim-diff: not a conflict diff — nothing to resolve", 3)
+    return
+  end
+  -- One conflict block per session today (`:NxDiffConflict` slices the first); the
+  -- regions list is already shaped for a future cursor→region pick.
+  local region = (r.regions or {})[1]
+  if not region then
+    nx.notify("nxvim-diff: no conflict region to resolve", 3)
+    return
+  end
+  local buf, first, last = r.buf, region.first, region.last
+  -- Guard: the live buffer must still carry the markers where we recorded them, else
+  -- these line numbers are stale and writing would corrupt the file — refuse loud.
+  local head = nx.buf.lines(buf, first - 1, first)[1] or ""
+  local tail = nx.buf.lines(buf, last - 1, last)[1] or ""
+  if not head:match("^<<<<<<<") or not tail:match("^>>>>>>>") then
+    nx.notify("nxvim-diff: the conflict markers moved or are gone — aborting resolve", 4)
+    return
+  end
+  local chosen = region[side] or {}
+
+  require("nxvim-diff").close()
+  -- Replace [first-1, last) (0-based, end-exclusive) — the whole marker block — with the
+  -- chosen side. set_lines is async (the edit applies after this chunk); notify when it
+  -- lands, and surface any refusal (a nomodifiable buffer) rather than failing silent.
+  nx.buf
+    .set_lines(buf, first - 1, last, true, chosen)
+    :next(function()
+      nx.notify("nxvim-diff: resolved conflict using " .. side)
+    end)
+    :catch(function(e)
+      nx.notify("nxvim-diff: resolve failed: " .. tostring(e), 4)
+    end)
+end
+
+function M.choose_ours(session)
+  resolve(session, "ours")
+end
+
+function M.choose_theirs(session)
+  resolve(session, "theirs")
+end
+
 function M.close(_session)
   require("nxvim-diff").close()
 end

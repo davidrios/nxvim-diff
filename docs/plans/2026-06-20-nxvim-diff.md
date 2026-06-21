@@ -217,13 +217,22 @@ Lua-only: a caller builds a spec with `lines = git.to_lines(...)` and calls `ope
   the `add`/`change` tints, fillers opposite an insertion/deletion, and a real diff3
   `conflict.spec` rendered end-to-end.
 
-- **`choose_ours` / `choose_theirs` — DEFERRED.** Writing a hunk's resolution back into
-  the real conflicted buffer needs the conflict source to carry the live `buf` + each
-  hunk's original marker line range (today `conflict.spec` hands `view.open` only the
-  reconstructed `lines`, with no mapping back to the on-disk conflict block). That's a
-  self-contained follow-up (thread the marker ranges through `conflict.parse` → spec →
-  session, add the two `config.ACTIONS` + nav handlers); the rendering — the defined
-  deliverable — is complete without it.
+- **`choose_ours` / `choose_theirs` — DONE.** `conflict.parse` now also returns
+  `regions` (each block's `<<<<<<<`/`>>>>>>>` line range + bare section contents);
+  `conflict.spec` carries them as `spec.resolve`, and `init.conflict` rebases the ranges
+  to absolute buffer lines and attaches the live `buf`, which `view.open` stows on the
+  session. The two `config.ACTIONS` (default maps `co`/`ct`) drive `nav.choose_ours` /
+  `nav.choose_theirs`, which — guarding that the recorded markers are still present —
+  replace the marker block `[first-1, last)` with the chosen side and close the diff.
+  - **This needed a new editor primitive** (the deferral's real blocker): nxvim had *no*
+    buffer-text mutation API by design. Added **`nx.buf.set_lines`** (alias
+    `nvim_buf_set_lines`) — an async, promise-returning whole-line write queued like every
+    other effect (`BufOp::SetLines` → `Editor::api_set_lines`, one undoable group through
+    the rope chokepoints), failing loud on a `nomodifiable`/read-only buffer; `vim.bo`
+    gained a round-tripping `modifiable`. Covered by the editor repo's `buf_set_lines`
+    suite and the plugin's `resolve_spec` (live: choose ours/theirs rewrites the buffer).
+  - One conflict block is resolved per diff (the first; `:NxDiffConflict` slices it); the
+    `regions` list is already shaped for a future cursor→region pick across a file.
 
 ## Phase 7 — Docs, perf ✅ (done)
 

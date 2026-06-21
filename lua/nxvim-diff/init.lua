@@ -151,6 +151,17 @@ function M.conflict()
     nx.notify("nxvim-diff: " .. reason)
     return
   end
+  -- Wire the write-back target so `choose_ours` / `choose_theirs` can replace the
+  -- conflict in the live buffer: the block started at absolute line `start.line`, so
+  -- rebase each region's block-relative line range by that offset, and record the buffer.
+  if spec.resolve then
+    spec.resolve.buf = vim.api.nvim_get_current_buf()
+    local offset = start.line - 1
+    for _, region in ipairs(spec.resolve.regions) do
+      region.first = region.first + offset
+      region.last = region.last + offset
+    end
+  end
   M.open(spec)
 end
 
