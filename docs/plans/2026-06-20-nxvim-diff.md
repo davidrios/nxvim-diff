@@ -231,8 +231,15 @@ Lua-only: a caller builds a spec with `lines = git.to_lines(...)` and calls `ope
     the rope chokepoints), failing loud on a `nomodifiable`/read-only buffer; `vim.bo`
     gained a round-tripping `modifiable`. Covered by the editor repo's `buf_set_lines`
     suite and the plugin's `resolve_spec` (live: choose ours/theirs rewrites the buffer).
-  - One conflict block is resolved per diff (the first; `:NxDiffConflict` slices it); the
-    `regions` list is already shaped for a future cursor→region pick across a file.
+  - **Whole-file conflict diffs + cursor→region resolve — DONE.** `:NxDiffConflict` now
+    parses the WHOLE buffer (the reconstructed ours/base/theirs sides carry every conflict
+    in context — they differ only at the conflicts, so `]c`/`[c` step between them).
+    `conflict.parse` records each region's reconstructed-line span per side (`recon`);
+    `view` projects those into each region's alignment-row range (`region.rows`); and
+    `nav` maps the cursor row to the conflict it sits in (nearest when on shared context),
+    so `co`/`ct` resolve that specific block. Covered by `conflict_spec` (recon spans,
+    incl. an empty section), `nav_spec` (the pure `region_at` mapper), and `resolve_spec`
+    (live: resolve only the 2nd conflict of a two-conflict file).
 
 ## Phase 7 — Docs, perf ✅ (done)
 

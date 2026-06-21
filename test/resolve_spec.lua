@@ -85,6 +85,55 @@ nx.test.describe("nxvim-diff conflict resolve", function()
     nx.test.expect(table.concat(lines, "|")).to_be("top|their change|bot")
   end)
 
+  nx.test.it("resolves only the conflict under the cursor in a multi-conflict file", function(t)
+    local content = {
+      "top",
+      "<<<<<<< HEAD",
+      "ours1",
+      "=======",
+      "theirs1",
+      ">>>>>>> b",
+      "mid",
+      "<<<<<<< HEAD",
+      "ours2",
+      "=======",
+      "theirs2",
+      ">>>>>>> b",
+      "bot",
+    }
+    local path = nx.test.tempdir() .. "/multi.txt"
+    nx.await(nx.fs.write(path, table.concat(content, "\n") .. "\n"))
+    t:cmd("edit " .. path)
+    local bufnr = t:buf()
+    diff.conflict()
+    local s = await_ready()
+    nx.test.expect(#s.resolve.regions).to_be(2)
+
+    -- Put the cursor on the SECOND conflict (its alignment-row range), then resolve it.
+    local row = s.resolve.regions[2].rows.first
+    s:goto_row(row)
+    nx.await(nx.wait_for(function()
+      return s:cursor_row() == row
+    end, { tries = 100, interval = 5, message = "cursor never reached the 2nd conflict" }))
+    nav.choose_theirs(s)
+
+    -- The first conflict's markers stay; only the second block becomes "theirs2".
+    local lines = await_lines(t, bufnr, {
+      "top",
+      "<<<<<<< HEAD",
+      "ours1",
+      "=======",
+      "theirs1",
+      ">>>>>>> b",
+      "mid",
+      "theirs2",
+      "bot",
+    })
+    nx.test
+      .expect(table.concat(lines, "|"))
+      .to_be("top|<<<<<<< HEAD|ours1|=======|theirs1|>>>>>>> b|mid|theirs2|bot")
+  end)
+
   nx.test.it("choose_* on a non-conflict diff is a no-op notice", function(t)
     -- A plain (generic) diff has no resolve target — choosing must not touch anything.
     diff.open({

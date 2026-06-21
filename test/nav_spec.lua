@@ -69,3 +69,41 @@ nx.test.describe("nxvim-diff.nav", function()
     nx.test.expect(s.jumped).to_be_nil()
   end)
 end)
+
+-- The cursor→region mapper that picks which conflict `choose_*` resolves (pure: reads
+-- each region's precomputed alignment-row range against a cursor row).
+nx.test.describe("nxvim-diff.nav region_at", function()
+  -- Two conflicts: region A occupies rows 2..2, region B rows 5..6.
+  local function two_regions()
+    return {
+      resolve = {
+        regions = {
+          { first = 2, last = 6, rows = { first = 2, last = 2 } },
+          { first = 8, last = 12, rows = { first = 5, last = 6 } },
+        },
+      },
+    }
+  end
+
+  nx.test.it("returns the region whose row range contains the cursor", function()
+    local s = two_regions()
+    nx.test.expect(nav._region_at(s, 2).first).to_be(2)
+    nx.test.expect(nav._region_at(s, 5).first).to_be(8)
+    nx.test.expect(nav._region_at(s, 6).first).to_be(8)
+  end)
+
+  nx.test.it("falls back to the nearest region when between conflicts", function()
+    local s = two_regions()
+    -- Row 3 is just past region A (dist 1) and before region B (dist 2) → A.
+    nx.test.expect(nav._region_at(s, 3).first).to_be(2)
+    -- Row 4 is equidistant-ish: dist to A.last(2)=2, to B.first(5)=1 → B.
+    nx.test.expect(nav._region_at(s, 4).first).to_be(8)
+    -- Past every conflict → the last one.
+    nx.test.expect(nav._region_at(s, 99).first).to_be(8)
+  end)
+
+  nx.test.it("returns nil when no region has a row range", function()
+    nx.test.expect(nav._region_at({ resolve = { regions = {} } }, 1)).to_be_nil()
+    nx.test.expect(nav._region_at({}, 1)).to_be_nil()
+  end)
+end)

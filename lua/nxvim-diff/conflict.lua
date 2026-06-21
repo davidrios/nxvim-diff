@@ -28,7 +28,7 @@ end
 --   has_conflict, diff3, count,
 --   ours = {...}, theirs = {...}, base = {...}|nil,   -- full reconstructed sides
 --   ours_label, theirs_label,
---   regions = { { first, last, ours, base?, theirs }, ... },
+--   regions = { { first, last, ours, base?, theirs, recon }, ... },
 -- }. Raises on an unterminated / malformed marker (fail loud, not silent skip).
 --
 -- `regions` is the write-back map the `choose_*` resolution actions need: one entry per
@@ -36,6 +36,12 @@ end
 -- `>>>>>>>` (`last`) in `lines`, plus that block's bare section contents (NOT the full
 -- reconstructed sides) — so resolving a hunk means "replace lines first..last with the
 -- chosen section". (The full `ours`/`base`/`theirs` above stay for the rendered diff.)
+--
+-- `recon` is each block's *reconstructed*-line span per side: `{ ours = {from,to}, base
+-- = {from,to}?, theirs = {from,to} }`, 1-based inclusive indices into the matching full
+-- reconstructed side above (an empty section is `from > to`). When all conflicts of a
+-- file are shown at once, this is how the view maps each block to the alignment rows it
+-- occupies, so the cursor can pick which conflict `choose_*` resolves.
 function M.parse(lines)
   local ours, base, theirs = {}, {}, {}
   local mode = "common"
@@ -54,7 +60,19 @@ function M.parse(lines)
       if is_start then
         mode, count = "ours", count + 1
         ours_label = ours_label or strip_label(line, 7)
-        region = { first = i, ours = {}, base = {}, theirs = {} }
+        -- `recon.*.from` is the index the section WILL start at in each reconstructed
+        -- side (the next append lands there); `.to` is filled in at the end marker.
+        region = {
+          first = i,
+          ours = {},
+          base = {},
+          theirs = {},
+          recon = {
+            ours = { from = #ours + 1 },
+            base = { from = #base + 1 },
+            theirs = { from = #theirs + 1 },
+          },
+        }
       else
         ours[#ours + 1] = line
         base[#base + 1] = line
@@ -85,7 +103,15 @@ function M.parse(lines)
         mode = "common"
         theirs_label = theirs_label or strip_label(line, 7)
         region.last = i
-        region.base = diff3 and region.base or nil
+        -- Close the reconstructed spans (`to` = the last index each section reached;
+        -- `from > to` when the section was empty).
+        region.recon.ours.to = #ours
+        region.recon.base.to = #base
+        region.recon.theirs.to = #theirs
+        if not diff3 then
+          region.base = nil
+          region.recon.base = nil
+        end
         regions[#regions + 1] = region
         region = nil
       else

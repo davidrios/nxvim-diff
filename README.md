@@ -38,10 +38,11 @@ covered by `nxvim --test-plugin .`:
 - **Intra-line highlights** — the edited characters of a changed line are tinted with
   `DiffText` (a character-level diff).
 - **Hunk navigation** — `]c` / `[c` / `]C` / `[C`, with wrap-around.
-- **Conflict resolution** — on a `:NxDiffConflict` diff, `co` / `ct` write the chosen
-  side (ours / theirs) back into the live conflicted buffer, replacing the whole marker
-  block as one undoable edit, then close the diff. Built on the editor's `nx.buf.set_lines`
-  (the async buffer-text write); guarded so a moved marker aborts loud.
+- **Conflict resolution** — `:NxDiffConflict` shows every conflict in the file at once;
+  `co` / `ct` write the chosen side (ours / theirs) of the conflict **under the cursor**
+  back into the live buffer, replacing its marker block as one undoable edit, then close
+  the diff. Built on the editor's `nx.buf.set_lines` (the async buffer-text write); guarded
+  so a moved marker aborts loud.
 - **Gutter signs & fillchar** — `signs` puts a `+`/`~`/`-` gutter sign on each changed
   line (opt-in; every pane reserves the column so they stay aligned), and `fillchar`
   paints a rule across the blank alignment rows (vim's diff-filler style). Both ride
@@ -53,10 +54,9 @@ covered by `nxvim --test-plugin .`:
   sides), config merge/validation, and spec validation.
 
 All planned phases are complete (see
-[`docs/plans/2026-06-20-nxvim-diff.md`](docs/plans/2026-06-20-nxvim-diff.md)). Conflict
-resolution today writes one block per diff (the first in the file) — re-run
-`:NxDiffConflict` for the next; a cursor→region pick for multi-block files is a possible
-follow-up.
+[`docs/plans/2026-06-20-nxvim-diff.md`](docs/plans/2026-06-20-nxvim-diff.md)), including
+whole-file conflict diffs with a cursor→region resolve (`co`/`ct` act on the conflict the
+cursor is in).
 
 ## Install
 
@@ -84,9 +84,11 @@ There are exactly two — by design:
 :NxDiffConflict   if the current file has conflict markers, open them as a 3-way diff
 ```
 
-`:NxDiffConflict` parses the file's `<<<<<<< / ||||||| / ======= / >>>>>>>` markers: a
-diff3-style file (base section present) opens as a 3-way ours | base | theirs (the two
-outer panes center-anchored against the base), a plain-merge file as a 2-way ours/theirs.
+`:NxDiffConflict` parses the file's `<<<<<<< / ||||||| / ======= / >>>>>>>` markers and
+opens the **whole file** with every conflict in context: a diff3-style file (base section
+present) as a 3-way ours | base | theirs (the two outer panes center-anchored against the
+base), a plain-merge file as a 2-way ours/theirs. Step between conflicts with `]c`/`[c`
+and resolve the one under the cursor with `co`/`ct`.
 
 Inside a diff (default, buffer-local bindings):
 

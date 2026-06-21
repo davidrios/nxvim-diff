@@ -75,15 +75,38 @@ end
 -- diff panes hold focus; the diff is closed first only to return the user to their
 -- resolved file. It is guarded: if the recorded markers are no longer where we left
 -- them (the file changed under us), it aborts loud rather than corrupt the buffer.
+-- The conflict region the cursor sits in (the diff shows every conflict of the file at
+-- once). A region carries the alignment-row range it occupies (`region.rows`, computed in
+-- view.lua); the cursor's row picks it. When the cursor is between conflicts (on shared
+-- context), the NEAREST region by row distance is chosen — so `co`/`ct` always act on the
+-- conflict you're closest to, the way you'd expect after a `]c`/`[c` jump.
+local function region_at(session, row)
+  local regions = (session.resolve and session.resolve.regions) or {}
+  for _, region in ipairs(regions) do
+    if region.rows and row >= region.rows.first and row <= region.rows.last then
+      return region
+    end
+  end
+  local best, best_dist
+  for _, region in ipairs(regions) do
+    if region.rows then
+      local dist = math.min(math.abs(row - region.rows.first), math.abs(row - region.rows.last))
+      if not best_dist or dist < best_dist then
+        best, best_dist = region, dist
+      end
+    end
+  end
+  return best
+end
+
 local function resolve(session, side)
   local r = session.resolve
   if not r then
     nx.notify("nxvim-diff: not a conflict diff — nothing to resolve", 3)
     return
   end
-  -- One conflict block per session today (`:NxDiffConflict` slices the first); the
-  -- regions list is already shaped for a future cursor→region pick.
-  local region = (r.regions or {})[1]
+  -- Pick the conflict the cursor is in (or nearest); the diff shows them all at once.
+  local region = region_at(session, session:cursor_row())
   if not region then
     nx.notify("nxvim-diff: no conflict region to resolve", 3)
     return
@@ -120,6 +143,9 @@ end
 function M.choose_theirs(session)
   resolve(session, "theirs")
 end
+
+-- The cursor→region mapper, exposed for tests (pure: reads region.rows + a row number).
+M._region_at = region_at
 
 function M.close(_session)
   require("nxvim-diff").close()

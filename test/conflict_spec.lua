@@ -73,6 +73,29 @@ nx.test.describe("nxvim-diff.conflict", function()
     nx.test.expect(table.concat(r.ours, "|")).to_be("ours line")
     nx.test.expect(table.concat(r.base, "|")).to_be("base line")
     nx.test.expect(table.concat(r.theirs, "|")).to_be("theirs line")
+    -- The reconstructed sides are "common top | <section> | common bottom", so each
+    -- one-line section sits at reconstructed line 2 of its side.
+    nx.test.expect(r.recon.ours.from).to_be(2)
+    nx.test.expect(r.recon.ours.to).to_be(2)
+    nx.test.expect(r.recon.base.from).to_be(2)
+    nx.test.expect(r.recon.theirs.to).to_be(2)
+  end)
+
+  nx.test.it("an empty section's reconstructed span is from > to", function()
+    -- theirs deletes the line: its section is empty, so recon.theirs is an empty span.
+    local p = conflict.parse({
+      "top",
+      "<<<<<<< HEAD",
+      "kept",
+      "=======",
+      ">>>>>>> b",
+      "bot",
+    })
+    local r = p.regions[1]
+    nx.test.expect(r.recon.ours.from).to_be(2)
+    nx.test.expect(r.recon.ours.to).to_be(2)
+    -- theirs has no line between ======= and >>>>>>>: from (2) > to (1).
+    nx.test.expect(r.recon.theirs.from > r.recon.theirs.to).to_be(true)
   end)
 
   nx.test.it("a plain merge region carries no base", function()

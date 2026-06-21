@@ -123,44 +123,39 @@ function M.git_head()
   end)
 end
 
--- conflict() — if the current buffer has git conflict markers, open them as a 3-way
--- (diff3 style) or 2-way (plain merge style) diff. Backs :NxDiffConflict. A clean
--- file just notifies.
+-- conflict() — if the current buffer has git conflict markers, open the WHOLE file as a
+-- 3-way (diff3 style) or 2-way (plain merge style) diff, with every conflict shown in
+-- context. Backs :NxDiffConflict. A clean file just notifies.
 --
--- Rather than scan every line in Lua, it uses the native `nx.buf.search` to locate
--- the conflict region: one search for the start marker (which also cheaply answers
--- "is there a conflict?" on a clean file), a second for the matching end marker, then
--- only the lines BETWEEN the markers are read and parsed.
+-- A cheap `nx.buf.search` for the start marker answers "is there a conflict?" before the
+-- whole buffer is read (a clean file pays nothing). The whole buffer is then parsed: the
+-- reconstructed sides carry all conflicts AND their surrounding context, so the diff is a
+-- full-file 3-way you can navigate; `spec.resolve.regions` (already in absolute buffer
+-- lines — the parse ran over the whole buffer) is what `choose_*` resolves the conflict
+-- under the cursor from. A malformed / unterminated marker makes `conflict.spec` raise;
+-- it is caught and surfaced as a clean notification.
 function M.conflict()
   local conflict = require("nxvim-diff.conflict")
-  local start = nx.buf.search(0, "^<<<<<<<", { engine = "vim" })
-  if not start then
+  if not nx.buf.search(0, "^<<<<<<<", { engine = "vim" }) then
     nx.notify("nxvim-diff: no conflict markers found")
     return
   end
-  local finish = nx.buf.search(0, "^>>>>>>>", { engine = "vim", from = { line = start.line } })
-  if not finish then
-    nx.notify("nxvim-diff: unterminated conflict marker")
+  local ok, spec, reason = pcall(conflict.spec, nx.buf.lines(0, 0, -1), vim.fn.expand("%:t"))
+  if not ok then
+    -- `spec` holds the raise (an unterminated / malformed marker); strip any position
+    -- prefix so the notice reads cleanly.
+    nx.notify("nxvim-diff: " .. tostring(spec):gsub("^.-nxvim%-diff: ", ""), 4)
     return
   end
-  -- Only the marker-delimited block is parsed (0-based, end-exclusive slice covering
-  -- the 1-based lines start.line..finish.line inclusive).
-  local block = nx.buf.lines(0, start.line - 1, finish.line)
-  local spec, reason = conflict.spec(block, vim.fn.expand("%:t"))
   if not spec then
     nx.notify("nxvim-diff: " .. reason)
     return
   end
   -- Wire the write-back target so `choose_ours` / `choose_theirs` can replace the
-  -- conflict in the live buffer: the block started at absolute line `start.line`, so
-  -- rebase each region's block-relative line range by that offset, and record the buffer.
+  -- conflict under the cursor in the live buffer. The region line ranges are already
+  -- absolute (the parse ran over the whole buffer), so only the buffer needs recording.
   if spec.resolve then
     spec.resolve.buf = vim.api.nvim_get_current_buf()
-    local offset = start.line - 1
-    for _, region in ipairs(spec.resolve.regions) do
-      region.first = region.first + offset
-      region.last = region.last + offset
-    end
   end
   M.open(spec)
 end

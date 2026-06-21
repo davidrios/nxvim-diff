@@ -61,11 +61,13 @@ buffer-local maps on every pane (all rebindable, see |nxvim-diff-config|):
 Hunk motions wrap around (past the last hunk → the first, and vice versa).
 
 `co` / `ct` only do something on a |:NxDiffConflict| diff: they write the chosen
-side back into the live conflicted buffer — replacing the whole marker block
-(`<<<<<<<` … `>>>>>>>`) with ours / theirs — then close the diff so you're back
-on the resolved file (`:w` to save). They abort loud if the markers moved since
-the diff opened. On a plain (non-conflict) diff they just say there's nothing to
-resolve.
+side back into the live conflicted buffer — replacing the marker block
+(`<<<<<<<` … `>>>>>>>`) of the conflict UNDER THE CURSOR with ours / theirs — then
+close the diff so you're back on the resolved file (`:w` to save). The diff shows
+every conflict in the file at once, so jump to one with `]c`/`[c` first; if the
+cursor is between conflicts, the nearest is resolved. They abort loud if the
+markers moved since the diff opened. On a plain (non-conflict) diff they just say
+there's nothing to resolve.
 
 ==============================================================================
 THE 3-WAY (DIFF3) LAYOUT				*nxvim-diff-3way*
@@ -189,14 +191,18 @@ blank. Both ride core extmark decorations (`sign_text` / `line_fill`).
 
 CONFLICT RESOLUTION					*nxvim-diff-resolve*
 
-On a |:NxDiffConflict| diff, `co` (`choose_ours`) and `ct` (`choose_theirs`)
-write the chosen side back into the live conflicted buffer: the whole marker
-block (`<<<<<<<` … `>>>>>>>`) is replaced with that side's lines via the editor's
-`nx.buf.set_lines`, as one undoable edit, and the diff closes so you land back on
-the resolved file. The action guards the write — if the markers are no longer
-where the diff found them (the file changed underneath), it aborts loud and
-writes nothing. Today one conflict block is resolved per diff (the first in the
-file); re-run |:NxDiffConflict| for the next.
+|:NxDiffConflict| opens the WHOLE file as a 3-way (or 2-way) diff with every
+conflict shown in context — the reconstructed ours/base/theirs sides differ only
+where the conflicts are, so `]c`/`[c` step from one to the next.
+
+`co` (`choose_ours`) and `ct` (`choose_theirs`) resolve the conflict UNDER THE
+CURSOR: its marker block (`<<<<<<<` … `>>>>>>>`) is replaced in the live buffer
+with that side's lines via the editor's `nx.buf.set_lines`, as one undoable edit,
+and the diff closes so you land back on the file. Each conflict knows the
+alignment rows it occupies, so the cursor picks which one is resolved; when the
+cursor sits on shared context between conflicts, the nearest is chosen. The action
+guards the write — if the markers are no longer where the diff found them (the
+file changed underneath), it aborts loud and writes nothing.
 
 ==============================================================================
 PERFORMANCE						*nxvim-diff-perf*

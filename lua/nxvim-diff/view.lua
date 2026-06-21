@@ -231,6 +231,43 @@ local function build(config, contents)
   return result, projs
 end
 
+-- Precompute each conflict region's ALIGNMENT-ROW range, so `choose_*` can map the
+-- cursor's row back to the conflict it sits in. A region's reconstructed-line span
+-- (`recon`, per side, from `conflict.parse`) is projected through the per-pane entry
+-- lists: a row belongs to the region when some pane's projected line falls inside that
+-- side's span. The union's min/max over every side is the region's `{ first, last }` row
+-- range (regions are disjoint and ordered, so the ranges don't overlap). Only a conflict
+-- spec carries `resolve`; a plain diff is a no-op here.
+local function attach_region_rows(resolve, projs)
+  if not (resolve and resolve.regions) then
+    return
+  end
+  -- Which projection (by pane index) carries which reconstructed side. A 3-pane diff is
+  -- ours | base | theirs; a 2-pane (plain merge) is ours | theirs.
+  local roles = #projs == 3
+      and {
+        { proj = projs[1], key = "ours" },
+        { proj = projs[2], key = "base" },
+        { proj = projs[3], key = "theirs" },
+      }
+    or { { proj = projs[1], key = "ours" }, { proj = projs[2], key = "theirs" } }
+  for _, region in ipairs(resolve.regions) do
+    local lo, hi
+    for _, role in ipairs(roles) do
+      local span = region.recon and region.recon[role.key]
+      if span and span.from <= span.to then
+        for row, e in ipairs(role.proj) do
+          if e.line and e.line >= span.from and e.line <= span.to then
+            lo = lo and math.min(lo, row) or row
+            hi = hi and math.max(hi, row) or row
+          end
+        end
+      end
+    end
+    region.rows = lo and { first = lo, last = hi } or nil
+  end
+end
+
 -- open(root, spec) — build a session from a validated spec (see the contract above).
 function M.open(root, spec)
   if #spec.panes ~= 2 and #spec.panes ~= 3 then
@@ -244,6 +281,9 @@ function M.open(root, spec)
   -- Intra-line spans (Phase 4) are computed inside build(), gated on config.inline (an
   -- O(len²) per-row character diff), and stashed on each side's projection entry.
   local result, projs = build(root.config, contents)
+  -- Map each conflict region to the alignment rows it occupies, so `choose_*` can resolve
+  -- the conflict under the cursor (a no-op for a non-conflict spec).
+  attach_region_rows(spec.resolve, projs)
 
   local panes = {}
   for i, pane in ipairs(spec.panes) do
