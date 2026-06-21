@@ -7,6 +7,7 @@
 -- TRY IT:
 --   :NxDiffGit        diff the current file's working tree against git HEAD
 --   :NxDiffConflict   if the file has conflict markers, open them as a 3-way diff
+--                     (open examples/sample/conflict.txt and run it for the diff3 layout)
 --
 -- Inside a diff:
 --   ]c / [c      next / previous changed hunk     [C / ]C   first / last hunk
@@ -52,3 +53,17 @@ vim.keymap.set("n", "<leader>du", function()
     },
   })
 end, { desc = "nxvim-diff: diff this buffer against an uppercased copy" })
+
+-- 3-way demo (Lua API only): three synthetic sides. In a 3-pane spec the MIDDLE pane is
+-- the common base; the outer two are center-anchored against it — exactly what
+-- `:NxDiffConflict` builds from a diff3 conflict.
+vim.keymap.set("n", "<leader>d3", function()
+  require("nxvim-diff").open({
+    title = "3-way demo",
+    panes = {
+      { label = "ours", lines = { "alpha", "BRAVO", "charlie", "delta" }, readonly = true },
+      { label = "base", lines = { "alpha", "bravo", "charlie" }, readonly = true },
+      { label = "theirs", lines = { "alpha", "bravo", "CHARLIE", "echo" }, readonly = true },
+    },
+  })
+end, { desc = "nxvim-diff: open a synthetic 3-way (diff3) diff" })

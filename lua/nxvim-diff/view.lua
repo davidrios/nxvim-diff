@@ -2,9 +2,10 @@
 -- down. The editor-integration heart; the only module that touches windows, views,
 -- and extmarks.
 --
--- Phase 2 renders a TWO-pane diff (a 3-pane spec — diff3 conflicts — fails loud until
--- Phase 6). The two read-only sides are `nx.view` surfaces laid out side by side in a
--- dedicated tab, so closing the diff restores the user's layout untouched.
+-- Renders a 2-pane diff OR a 3-pane diff3 (Phase 6): the read-only sides are `nx.view`
+-- surfaces laid out side by side in a dedicated tab, so closing the diff restores the
+-- user's layout untouched. In a 3-pane spec the MIDDLE pane is the common base and the
+-- outer two are center-anchored against it (see `build` / `diff.compute3`).
 --
 -- Layout is a fresh tab: pane A mounts with `{ tab = true }` (the view fills a new tab
 -- page, no split, no leftover empty window — the core primitive added for this), and
@@ -151,21 +152,66 @@ local function finish(session, api)
     end)
 end
 
+-- Compute the alignment AND the per-pane projections (with intra-line `DiffText` spans
+-- already attached when `config.inline`) for a 2- or 3-pane diff. Both pane counts yield
+-- the same per-pane entry shape (`{ line=, kind=, spans? }` / `{ filler=true, kind= }`),
+-- so the rest of the view paints them through one path.
+--
+-- A 3-pane spec is a diff3: the MIDDLE pane is the common base, the outer two are
+-- center-anchored against it. compute3 takes (base, ours, theirs) = (contents[2],
+-- contents[1], contents[3]); only the outer panes carry intra-line spans (each computed
+-- against the base line — the base pane stays a whole-line tint).
+local function build(config, contents)
+  if #contents == 3 then
+    local result = diff.compute3(contents[2], contents[1], contents[3])
+    local projs = {
+      diff.project3(result.rows, "ours"),
+      diff.project3(result.rows, "base"),
+      diff.project3(result.rows, "theirs"),
+    }
+    if config.inline then
+      for k, r in ipairs(result.rows) do
+        if r.base then
+          local base_line = contents[2][r.base]
+          if r.cells.ours.kind == "change" then
+            projs[1][k].spans = diff.inline(base_line, contents[1][r.cells.ours.line]).b
+          end
+          if r.cells.theirs.kind == "change" then
+            projs[3][k].spans = diff.inline(base_line, contents[3][r.cells.theirs.line]).b
+          end
+        end
+      end
+    end
+    return result, projs
+  end
+
+  local result = diff.compute(contents[1], contents[2])
+  local projs = { diff.project(result.rows, "a"), diff.project(result.rows, "b") }
+  if config.inline then
+    for k, r in ipairs(result.rows) do
+      if r.kind == "change" then
+        local sp = diff.inline(contents[1][r.a], contents[2][r.b])
+        projs[1][k].spans = sp.a
+        projs[2][k].spans = sp.b
+      end
+    end
+  end
+  return result, projs
+end
+
 -- open(root, spec) — build a session from a validated spec (see the contract above).
 function M.open(root, spec)
-  if #spec.panes ~= 2 then
-    error(
-      ("nxvim-diff: 3-way rendering not implemented yet (Phase 6); got %d panes"):format(
-        #spec.panes
-      )
-    )
+  if #spec.panes ~= 2 and #spec.panes ~= 3 then
+    error(("nxvim-diff: a diff needs 2 or 3 panes, got %d"):format(#spec.panes))
   end
 
   local contents = {}
   for i, pane in ipairs(spec.panes) do
     contents[i] = resolve(pane)
   end
-  local result = diff.compute(contents[1], contents[2])
+  -- Intra-line spans (Phase 4) are computed inside build(), gated on config.inline (an
+  -- O(len²) per-row character diff), and stashed on each side's projection entry.
+  local result, projs = build(root.config, contents)
 
   local panes = {}
   for i, pane in ipairs(spec.panes) do
@@ -173,24 +219,10 @@ function M.open(root, spec)
       name = "nxdiff:" .. (pane.label or ("pane" .. i)),
       filetype = pane.filetype,
     })
-    local proj = diff.project(result.rows, SIDES[i])
+    local proj = projs[i]
     local text = project_text(proj, contents[i])
     v:set_lines(text)
     panes[i] = { view = v, label = pane.label, side = SIDES[i], proj = proj, text = text }
-  end
-
-  -- Intra-line spans (Phase 4): for each `change` row compute the changed character
-  -- ranges once and stash each side's byte ranges on that side's projection entry (proj
-  -- is 1:1 with rows), so pane_marks can paint `DiffText` over the edited characters.
-  -- Gated on `config.inline` since it's an O(len²) per-row character diff.
-  if root.config.inline then
-    for k, r in ipairs(result.rows) do
-      if r.kind == "change" then
-        local sp = diff.inline(contents[1][r.a], contents[2][r.b])
-        panes[1].proj[k].spans = sp.a
-        panes[2].proj[k].spans = sp.b
-      end
-    end
   end
 
   local session = {

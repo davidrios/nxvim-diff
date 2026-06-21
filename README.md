@@ -27,26 +27,29 @@ blank left row is the alignment filler opposite it.)
 
 ## Status
 
-A working **two-pane diff viewer**, plus the pure cores that feed it — all covered by
-`nxvim --test-plugin .`:
+A working **two- and three-pane diff viewer**, plus the pure cores that feed it — all
+covered by `nxvim --test-plugin .`:
 
 - **Rendering** — a diff opens side-by-side in a dedicated tab, projected to equal
-  height with alignment fillers and DiffAdd/DiffDelete/DiffChange line tints.
+  height with alignment fillers and DiffAdd/DiffDelete/DiffChange line tints. A **3-pane
+  diff3** (`:NxDiffConflict` on a diff3-style conflict) lays out ours | base | theirs,
+  center-anchored on the middle (base) pane.
 - **Scroll / cursor sync** — the panes' viewports and cursor row stay locked together.
 - **Intra-line highlights** — the edited characters of a changed line are tinted with
   `DiffText` (a character-level diff).
 - **Hunk navigation** — `]c` / `[c` / `]C` / `[C`, with wrap-around.
 - **Git source** — `:NxDiffGit` diffs the current file against HEAD, run inside the
   file's own repo, with clear not-a-repo / no-file / not-in-HEAD messages.
-- **Pure cores** — the LCS **diff engine** (alignment, hunks, projection), the
-  **conflict-marker parser** (diff3 / plain-merge → sides), config merge/validation, and
-  spec validation.
+- **Pure cores** — the LCS **diff engine** (2-way alignment + the center-anchored 3-way
+  merge, hunks, projection), the **conflict-marker parser** (diff3 / plain-merge →
+  sides), config merge/validation, and spec validation.
 
 Still building out (see
 [`docs/plans/2026-06-20-nxvim-diff.md`](docs/plans/2026-06-20-nxvim-diff.md)):
 
-- the **3-way** layout for diff3 conflicts (`:NxDiffConflict`) — the parser is done, but
-  laying out three panes is Phase 6, so a 3-pane spec currently **fails loud**;
+- **`choose_ours` / `choose_theirs`** merge actions — writing a hunk's resolution back
+  into the real conflicted buffer (the 3-way *layout* is done; the write-back is a
+  self-contained follow-up);
 - per-hunk gutter **signs** (`signs`) and **filler glyphs** (`fillchar`) — deferred until
   nxvim's core can paint an extmark gutter sign / filler row; the options exist but are
   inert (a changed line is conveyed by its tint + `DiffText`, a filler by a blank row).
@@ -78,9 +81,8 @@ There are exactly two — by design:
 ```
 
 `:NxDiffConflict` parses the file's `<<<<<<< / ||||||| / ======= / >>>>>>>` markers: a
-diff3-style file (base section present) becomes a 3-way ours/base/theirs, a plain-merge
-file a 2-way ours/theirs. **Note:** the 3-pane *layout* is still pending (Phase 6), so a
-diff3 conflict fails loud at render for now; the 2-way merge case renders today.
+diff3-style file (base section present) opens as a 3-way ours | base | theirs (the two
+outer panes center-anchored against the base), a plain-merge file as a 2-way ours/theirs.
 
 Inside a diff (default, buffer-local bindings):
 

@@ -140,6 +140,117 @@ function M.project(rows, side)
   return out
 end
 
+-- ===== 3-way (diff3) alignment ==============================================
+--
+-- A center-anchored alignment of three sides around a common `base` (Meld / vimdiff3
+-- style): the middle pane is the base, the outer two (`ours`, `theirs`) are each
+-- compared against it. Built from two ordinary 2-way diffs that share the base axis —
+-- `compute(base, ours)` and `compute(base, theirs)` — merged on base line number so a
+-- base line and the two sides' versions of it sit on one screen row.
+--
+--   row = {
+--     kind = "same"|"change",          -- "same" iff neither side touched this row
+--     base = <base index|nil>,         -- nil on a side-insertion row
+--     cells = {                         -- one per pane role; line=nil ⇒ filler
+--       ours   = { line = <idx|nil>, kind = "same"|"add"|"change"|nil },
+--       base   = { line = <idx|nil>, kind = "change"|nil },
+--       theirs = { line = <idx|nil>, kind = "same"|"add"|"change"|nil },
+--     },
+--   }
+--
+-- `project3(rows, role)` turns it into the same per-pane entry shape `project` yields
+-- (`{ line=, kind= }` / `{ filler=true, kind= }`), so the view layer paints 2- and
+-- 3-way diffs through one code path.
+
+local ROLES = { ours = true, base = true, theirs = true }
+
+local FILLER = { line = nil, kind = nil }
+
+-- Index one pairwise `compute(base, side).rows` by base line: `at[bi]` is the row that
+-- references base line `bi` (a same/change/del row — every base line has exactly one),
+-- and `ins[bi]` is the list of side line indices inserted immediately *before* base line
+-- `bi` (with `ins[n+1]` holding any lines appended after the last base line).
+local function index_pairwise(rows, n)
+  local at, ins, pending = {}, {}, {}
+  for _, r in ipairs(rows) do
+    if r.kind == "add" then -- a side-only line: belongs in the gap before the next base line
+      pending[#pending + 1] = r.b
+    else -- same / change / del — references base line r.a
+      ins[r.a] = pending
+      pending = {}
+      at[r.a] = r
+    end
+  end
+  ins[n + 1] = pending -- trailing insertions, after the last base line
+  return at, ins
+end
+
+-- The cell for one side at a base line, from that side's pairwise row `r`:
+--   same   → the side line, no tint;  change → the side line, DiffChange;
+--   del    → a filler (the side dropped this base line).
+local function side_cell(r)
+  if r.kind == "same" then
+    return { line = r.b, kind = nil }
+  elseif r.kind == "change" then
+    return { line = r.b, kind = "change" }
+  end
+  return FILLER -- del: the side has no line here
+end
+
+-- A side-insertion row (`role` added `line`, the other two panes are fillers).
+local function insertion_row(role, line)
+  local cells = { ours = FILLER, base = FILLER, theirs = FILLER }
+  cells[role] = { line = line, kind = "add" }
+  return { kind = "change", base = nil, cells = cells }
+end
+
+-- compute3(base, ours, theirs) → { rows = <3-way alignment>, hunks = <ranges> }. The
+-- three arguments are line arrays; `base` is the common ancestor the outer two are
+-- aligned against. Reuses the 2-way engine (so `change`-pairing and the hunk model are
+-- shared) and merges the two diffs on the base axis.
+function M.compute3(base, ours, theirs)
+  base, ours, theirs = base or {}, ours or {}, theirs or {}
+  local n = #base
+  local o_at, o_ins = index_pairwise(M.compute(base, ours).rows, n)
+  local t_at, t_ins = index_pairwise(M.compute(base, theirs).rows, n)
+
+  local rows = {}
+  for bi = 1, n + 1 do
+    for _, oi in ipairs(o_ins[bi] or {}) do
+      rows[#rows + 1] = insertion_row("ours", oi)
+    end
+    for _, ti in ipairs(t_ins[bi] or {}) do
+      rows[#rows + 1] = insertion_row("theirs", ti)
+    end
+    if bi <= n then
+      local orow, trow = o_at[bi], t_at[bi]
+      local changed = orow.kind ~= "same" or trow.kind ~= "same"
+      rows[#rows + 1] = {
+        kind = changed and "change" or "same",
+        base = bi,
+        cells = {
+          ours = side_cell(orow),
+          base = { line = bi, kind = changed and "change" or nil },
+          theirs = side_cell(trow),
+        },
+      }
+    end
+  end
+  return { rows = rows, hunks = hunks_of(rows) }
+end
+
+-- project3(rows, role) — the per-pane entry list for "ours" / "base" / "theirs", the
+-- same shape `project` yields for a 2-way side (so the view paints both uniformly).
+function M.project3(rows, role)
+  assert(ROLES[role], "nxvim-diff.diff.project3: role must be 'ours', 'base', or 'theirs'")
+  local out = {}
+  for _, r in ipairs(rows) do
+    local c = r.cells[role]
+    out[#out + 1] = c.line and { line = c.line, kind = c.kind } or { filler = true, kind = c.kind }
+  end
+  return out
+end
+
 -- Split `s` into its UTF-8 characters, returning each char's 0-based byte start (and the
 -- line's total byte length). Falls back to one entry per byte for invalid UTF-8 so a
 -- binary / mojibake line still diffs (byte-wise) instead of erroring inside `utf8.codes`.

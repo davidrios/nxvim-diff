@@ -1,0 +1,14 @@
+title: release notes
+status: draft
+
+<<<<<<< HEAD
+- add the side-by-side diff viewer
+- ship the 3-way conflict layout
+||||||| merged common ancestor
+- add the diff viewer
+=======
+- add the side-by-side diff viewer
+- wire up scroll + cursor sync
+>>>>>>> feature/sync
+
+thanks for reading!

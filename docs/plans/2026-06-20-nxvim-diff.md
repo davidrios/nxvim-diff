@@ -192,12 +192,39 @@ Lua-only: a caller builds a spec with `lines = git.to_lines(...)` and calls `ope
 > `:edit` reads the file's name instead of a stale empty one. With those, `git_head` just
 > reads `expand("%:p")` and the tests `:edit` normally (no touch dance).
 
-## Phase 6 — 3-way diff / merge (`:NxDiffConflict` rendering)
+## Phase 6 — 3-way diff / merge (`:NxDiffConflict` rendering) ✅ (choose_* deferred)
 
-`conflict.spec` already yields a 3-pane (diff3) / 2-pane (merge) spec. Make `view.open`
-lay out 3 panes Meld-style (center-anchored alignment of base↔ours and base↔theirs).
-Optional: `choose_ours`/`choose_theirs` hunk actions writing the resolution back into
-the real conflicted buffer (extend `config.ACTIONS`).
+`conflict.spec` already yielded a 3-pane (diff3) / 2-pane (merge) spec; this phase makes
+`view.open` actually render the 3-pane case Meld-style.
+
+- **`diff.compute3(base, ours, theirs)`** — a center-anchored 3-way alignment built by
+  reusing the 2-way engine: it runs `compute(base, ours)` and `compute(base, theirs)`
+  (so `change`-pairing and the hunk model are shared) and **merges them on the base
+  line**, so a base line and each side's version of it land on one screen row. Pure ⇒
+  unit-tested (`diff_spec` "3-way": same/change kinds, hunk ranges, the center-anchored
+  projections, and the `add`/`change` cell tints). Side insertions become base-less
+  `add` rows; a base line a side deleted becomes a filler opposite it.
+- **`diff.project3(rows, role)`** — the per-pane (`ours`/`base`/`theirs`) entry list, the
+  same `{ line=, kind=, spans? }` / `{ filler=true }` shape `project` yields, so the view
+  paints 2- and 3-way diffs through one path.
+- **`view.lua`** — a `build(config, contents)` helper computes the alignment + per-pane
+  projections (with `DiffText` spans attached) for either pane count; everything
+  downstream (mount, decor, sync, keymap) was already pane-count-agnostic (it loops over
+  `session.panes`), so the 3 panes lay out (ours | base | theirs), tint, scroll/cursor
+  sync, and hunk-nav for free. **In any 3-pane spec the MIDDLE pane is the common base**
+  and the outer two are aligned against it — the inline spans on the outer panes are
+  computed against the base line; the base pane keeps a whole-line tint only.
+- Live-verified in `test/render3_spec.lua`: a 3-pane layout center-anchored on the base,
+  the `add`/`change` tints, fillers opposite an insertion/deletion, and a real diff3
+  `conflict.spec` rendered end-to-end.
+
+- **`choose_ours` / `choose_theirs` — DEFERRED.** Writing a hunk's resolution back into
+  the real conflicted buffer needs the conflict source to carry the live `buf` + each
+  hunk's original marker line range (today `conflict.spec` hands `view.open` only the
+  reconstructed `lines`, with no mapping back to the on-disk conflict block). That's a
+  self-contained follow-up (thread the marker ranges through `conflict.parse` → spec →
+  session, add the two `config.ACTIONS` + nav handlers); the rendering — the defined
+  deliverable — is complete without it.
 
 ## Phase 7 — Docs, perf
 
