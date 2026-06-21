@@ -226,10 +226,34 @@ Lua-only: a caller builds a spec with `lines = git.to_lines(...)` and calls `ope
   session, add the two `config.ACTIONS` + nav handlers); the rendering — the defined
   deliverable — is complete without it.
 
-## Phase 7 — Docs, perf
+## Phase 7 — Docs, perf ✅ (done)
 
-`doc/nxvim-diff.txt` help (via nxvim-help); README "Extending" worked example; ship the
-histogram diff if Phase 1's follow-up is warranted.
+- **Help** — `doc/nxvim-diff.txt`, a vim-help-format manual surfaced by nxvim-help
+  (`:help nxvim-diff`). No `tags` file is shipped: nxvim-help auto-derives targets from
+  the `*anchor*`s (matching the sibling plugins), so the help works the moment the plugin
+  is on the runtimepath. Covers the commands, the in-diff keys, the 3-way layout, the
+  full Lua API, configuration (incl. the deferred `signs`/`fillchar`/`choose_*`), a
+  worked extending example, and the perf guards.
+- **README "Extending"** — a complete formatter-preview worked example (buffer vs its
+  formatted output through `open()`), alongside the existing git/conflict-as-clients note.
+- **Perf** — rather than swap in histogram/Myers wholesale, `diff.compute` got two cheap,
+  high-value guards that keep it bounded (the actual goal — "the editor must never
+  freeze"):
+  1. **Prefix/suffix trim** — shared leading/trailing lines are peeled off as `same` rows
+     and only the differing *middle* runs the O(n·m) LCS. The dominant real case (a few
+     edits in an otherwise-identical file) shrinks to a tiny middle and gets the exact,
+     minimal alignment. (Trimming is result-identical to a plain LCS for ordinary edits —
+     the peeled lines are equal, so the LCS would have matched them anyway.)
+  2. **Cell cap** (`diff.LCS_CELL_LIMIT`, default 1e6) — if the trimmed middle is still
+     huge and highly divergent, it falls back to a coarse block-replace (every old line a
+     `del`, every new line an `add`; `pair_changes` turns the overlap into `change` rows)
+     instead of allocating an enormous table. Correct (every line is shown), just not the
+     minimal-edit alignment; O(n+m), never freezes.
+
+  `compute3` inherits both for free (it's built on `compute`). Covered by `diff_spec`'s
+  "perf guards" cases (trim parity, an internal match found under the cap, and the coarse
+  fallback past a lowered cap). A full histogram/Myers engine stays a possible future
+  upgrade, but the freeze risk Phase 1 flagged is closed.
 
 ---
 

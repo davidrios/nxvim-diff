@@ -120,9 +120,87 @@ local function hunks_of(rows)
   return hunks
 end
 
+-- The LCS DP table is O(n·m) in memory, so a huge, highly-divergent diff could allocate
+-- enough cells to freeze the editor. Two guards keep `compute` bounded:
+--
+--   1. PREFIX/SUFFIX TRIM — the shared leading/trailing lines (the overwhelmingly common
+--      case: a few edits inside an otherwise-identical file) are peeled off as `same`
+--      rows and only the differing MIDDLE runs the LCS. Normal edits shrink to a tiny
+--      middle and get the exact, minimal alignment.
+--   2. CELL CAP — if the trimmed middle is still larger than `LCS_CELL_LIMIT` cells, the
+--      middle falls back to a coarse block-replace (every old line a `del`, every new
+--      line an `add` → pair_changes turns the overlap into `change` rows). Still correct
+--      — every line is shown — just not the minimal-edit alignment. O(n+m), never
+--      allocates the big table. (Exposed on M so a test can lower it.)
+--
+-- Trimming doesn't change the result for normal inputs: the peeled lines are equal, so
+-- the LCS would have matched them as `same` anyway.
+M.LCS_CELL_LIMIT = 1000000
+
+-- Count of shared leading lines of `a` and `b`.
+local function common_prefix(a, b)
+  local i, lim = 0, math.min(#a, #b)
+  while i < lim and a[i + 1] == b[i + 1] do
+    i = i + 1
+  end
+  return i
+end
+
+-- Count of shared trailing lines of `a` / `b` that don't overlap the `prefix` already
+-- claimed (so a fully-identical file isn't counted twice).
+local function common_suffix(a, b, prefix)
+  local n, m = #a, #b
+  local s, lim = 0, math.min(n, m) - prefix
+  while s < lim and a[n - s] == b[m - s] do
+    s = s + 1
+  end
+  return s
+end
+
 -- compute(a, b) → { rows = <alignment>, hunks = <ranges> }. `a` / `b` are line arrays.
+-- Prefix/suffix-trimmed with a cell cap (see LCS_CELL_LIMIT) so it stays bounded on big,
+-- divergent inputs; the result is the same as a plain LCS for ordinary edits.
 function M.compute(a, b)
-  local rows = pair_changes(lcs_ops(a or {}, b or {}))
+  a, b = a or {}, b or {}
+  local n, m = #a, #b
+  local p = common_prefix(a, b)
+  local s = common_suffix(a, b, p)
+
+  -- The differing middle: a[p+1 .. n-s] vs b[p+1 .. m-s].
+  local mid_a, mid_b = {}, {}
+  for i = p + 1, n - s do
+    mid_a[#mid_a + 1] = a[i]
+  end
+  for j = p + 1, m - s do
+    mid_b[#mid_b + 1] = b[j]
+  end
+
+  local mid_ops
+  if #mid_a * #mid_b > M.LCS_CELL_LIMIT then
+    mid_ops = {} -- coarse block-replace: del every old line, add every new line
+    for i = 1, #mid_a do
+      mid_ops[#mid_ops + 1] = { op = "del", a = i }
+    end
+    for j = 1, #mid_b do
+      mid_ops[#mid_ops + 1] = { op = "add", b = j }
+    end
+  else
+    mid_ops = lcs_ops(mid_a, mid_b)
+  end
+
+  -- Reassemble full ops, rebasing the middle's indices past the prefix.
+  local ops = {}
+  for i = 1, p do
+    ops[#ops + 1] = { op = "same", a = i, b = i }
+  end
+  for _, o in ipairs(mid_ops) do
+    ops[#ops + 1] = { op = o.op, a = o.a and o.a + p or nil, b = o.b and o.b + p or nil }
+  end
+  for k = 1, s do
+    ops[#ops + 1] = { op = "same", a = n - s + k, b = m - s + k }
+  end
+
+  local rows = pair_changes(ops)
   return { rows = rows, hunks = hunks_of(rows) }
 end
 

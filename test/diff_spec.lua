@@ -79,6 +79,44 @@ nx.test.describe("nxvim-diff.diff", function()
   end)
 end)
 
+-- Perf guards: prefix/suffix trim + the cell-cap coarse fallback (Phase 7). The trim
+-- must not change the alignment for ordinary edits; the cap must still produce a correct
+-- (if coarse) result past the limit instead of building the big LCS table.
+nx.test.describe("nxvim-diff.diff perf guards", function()
+  local function kinds_of(a, b)
+    local out = {}
+    for _, r in ipairs(diff.compute(a, b).rows) do
+      out[#out + 1] = r.kind
+    end
+    return table.concat(out, ",")
+  end
+
+  nx.test.it("trimming a shared prefix/suffix gives the same alignment as a full LCS", function()
+    -- A change buried inside identical context — the common case the trim optimizes.
+    local a = { "h1", "h2", "h3", "old", "f1", "f2" }
+    local b = { "h1", "h2", "h3", "new", "f1", "f2" }
+    nx.test.expect(kinds_of(a, b)).to_be("same,same,same,change,same,same")
+  end)
+
+  nx.test.it("an internal match inside the middle is still found under the cap", function()
+    -- middle a=[X,c,Y] vs b=[c] (between shared p…s): the exact LCS keeps `c` as `same`.
+    local a = { "p", "X", "c", "Y", "s" }
+    local b = { "p", "c", "s" }
+    nx.test.expect(kinds_of(a, b)).to_be("same,del,same,del,same")
+  end)
+
+  nx.test.it("past the cell cap the middle falls back to a coarse block-replace", function()
+    local saved = diff.LCS_CELL_LIMIT
+    diff.LCS_CELL_LIMIT = 2 -- middle is 3×1 = 3 cells > 2 ⇒ coarse path
+    local a = { "p", "X", "c", "Y", "s" }
+    local b = { "p", "c", "s" }
+    -- Coarse del-run+add-run: X→c pairs into a change, then c/Y drop as dels (no LCS, so
+    -- the internal `c` match is NOT recovered — the trade for staying bounded).
+    nx.test.expect(kinds_of(a, b)).to_be("same,change,del,del,same")
+    diff.LCS_CELL_LIMIT = saved
+  end)
+end)
+
 -- 3-way (diff3) alignment: a center-anchored merge of two 2-way diffs against `base`.
 nx.test.describe("nxvim-diff.diff 3-way", function()
   -- The text each pane shows for an alignment, via its projection (filler → "·").

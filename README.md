@@ -112,8 +112,24 @@ A pane carries **exactly one** content source — `lines` (an array), `buf` (a b
 or `path` (an absolute path) — plus optional `label`, `filetype`, and `readonly`
 (default `true`). `validate_spec` enforces the shape and fails loud.
 
-The bundled git/conflict support are themselves clients of this API, so they double as
-worked examples:
+A worked example — a **formatter preview** (this buffer vs its formatted output) is a
+one-screen plugin on top of `open`:
+
+```lua
+vim.keymap.set("n", "<leader>fp", function()
+  local src = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+  local out = vim.fn.systemlist("prettier --stdin-filepath " .. vim.fn.expand("%"), src)
+  require("nxvim-diff").open({
+    title = "format preview",
+    panes = {
+      { label = "buffer",    lines = src, filetype = vim.bo.filetype },
+      { label = "formatted", lines = out, filetype = vim.bo.filetype },
+    },
+  })
+end, { desc = "preview formatting as a diff" })
+```
+
+The bundled git/conflict support are themselves clients of this API too:
 
 ```lua
 local diff = require("nxvim-diff")
@@ -125,6 +141,9 @@ diff.close()
 For a richer git comparison than HEAD (an arbitrary rev, the index, `rev..rev`), build
 the spec yourself — `require("nxvim-diff.git").to_lines(...)` is handy — and `open()`
 it. That's intentionally Lua, not a forest of command flags.
+
+> A 3-pane spec is a 3-way diff: the **middle** pane is the common base, the outer two
+> are center-anchored against it.
 
 ## Configuration
 
@@ -150,6 +169,20 @@ groups, so a ported colorscheme themes the viewer unmodified; overrides and the
 plugin-private `NxDiff*` extras are in
 [`highlights.lua`](lua/nxvim-diff/highlights.lua).
 
+## Performance
+
+The line diff is an LCS with two guards so a large file never freezes the editor:
+shared leading/trailing lines are **trimmed** before the `O(n·m)` table runs (a few
+edits in a big file stay cheap and get the exact alignment), and a still-huge,
+highly-divergent middle falls back to a coarse block-replace (`diff.LCS_CELL_LIMIT`)
+rather than allocating an enormous table — correct, every line shown, just not minimal.
+
+## Help
+
+With [nxvim-help](https://github.com/davidrios/nxvim-help) installed, `:help nxvim-diff`
+opens the full manual ([`doc/nxvim-diff.txt`](doc/nxvim-diff.txt)) — no `tags` file
+needed, the anchors are auto-derived.
+
 ## Testing
 
 The plugin carries a Lua test suite (`test/*_spec.lua`) built on nxvim's native
@@ -160,10 +193,11 @@ nxvim --test-plugin .
 ```
 
 The **pure** specs need no editor state: `config_spec` (merge/validation), `diff_spec`
-(the engine + the intra-line char-diff), `conflict_spec` (the marker parser), `nav_spec`
-(hunk navigation), and `api_spec` (`validate_spec` + git helpers). The **live** specs
-drive a real diff: `render_spec` (pane layout), `sync_spec` (scroll/cursor sync),
-`decor_spec` (the line tints + `DiffText` spans), and `git_spec` (`:NxDiffGit`).
+(the 2-way + 3-way engine, the intra-line char-diff, and the perf guards), `conflict_spec`
+(the marker parser), `nav_spec` (hunk navigation), and `api_spec` (`validate_spec` + git
+helpers). The **live** specs drive a real diff: `render_spec` (2-pane layout),
+`render3_spec` (3-way diff3 layout), `sync_spec` (scroll/cursor sync), `decor_spec` (the
+line tints + `DiffText` spans), and `git_spec` (`:NxDiffGit`).
 
 ## License
 
