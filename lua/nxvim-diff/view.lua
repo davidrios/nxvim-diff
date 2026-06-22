@@ -288,9 +288,19 @@ function M.open(root, spec)
   local panes = {}
   for i, pane in ipairs(spec.panes) do
     local v = nx.view.create({
-      name = "nxdiff:" .. (pane.label or ("pane" .. i)),
+      -- The pane label IS the view's display name — it's what the statusline and the tab
+      -- label now show (a view has no file path, so without a name it reads `[No Name]`),
+      -- so each pane reads as its side ("ours" / "base" / "theirs" / "HEAD" / …).
+      name = pane.label or ("pane " .. i),
       filetype = pane.filetype,
     })
+    -- Closing ANY pane's window (`:q` / `:close`) tears the whole diff down: the three
+    -- panes are one unit, so they come and go together. `on_close` fires only on the user
+    -- close path, and `root.close()` routes through `:unmount`/`destroy` (not the user
+    -- path), so closing the siblings here doesn't re-fire — no recursion.
+    v:on_close(function()
+      root.close()
+    end)
     local proj = projs[i]
     local text = project_text(proj, contents[i])
     v:set_lines(text)

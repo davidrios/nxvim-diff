@@ -73,4 +73,40 @@ nx.test.describe("nxvim-diff render", function()
     -- "two" → "TWO" is a change row; both sides stay 2 lines (no filler needed).
     nx.test.expect(table.concat(a, "|")).to_be("one|two")
   end)
+
+  nx.test.it("names each pane (so a pane is not [No Name])", function()
+    diff.open({
+      panes = {
+        { label = "ours", lines = { "x" } },
+        { label = "base", lines = { "x" } },
+        { label = "theirs", lines = { "x" } },
+      },
+    })
+    local s = await_ready()
+    -- The pane label IS the view's name — what the statusline / tab label show.
+    nx.test.expect(s.panes[1].view.name).to_be("ours")
+    nx.test.expect(s.panes[2].view.name).to_be("base")
+    nx.test.expect(s.panes[3].view.name).to_be("theirs")
+  end)
+
+  nx.test.it("`:q` on one pane tears down the whole diff", function()
+    diff.open({
+      panes = {
+        { label = "ours", lines = { "x" } },
+        { label = "base", lines = { "x" } },
+        { label = "theirs", lines = { "x" } },
+      },
+    })
+    local s = await_ready()
+    nx.test.expect(#s.panes).to_be(3)
+
+    -- Quit one pane the way the user does. on_close fires → the session closes ALL
+    -- three panes, leaving its dedicated tab and returning to the original.
+    s.panes[2].view:focus()
+    vim.cmd("q")
+    nx.await(nx.wait_for(function()
+      return diff.session() == nil
+    end, { tries = 200, interval = 5, message = "closing a pane did not tear the diff down" }))
+    nx.test.expect(diff.session()).to_be(nil)
+  end)
 end)
