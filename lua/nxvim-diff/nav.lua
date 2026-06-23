@@ -102,13 +102,13 @@ end
 -- every resolve action so they agree on "which conflict" and on the failure notices.
 local function current_region(session)
   if not session.resolve then
-    nx.notify("nxvim-diff: not a conflict diff — nothing to resolve", 3)
+    nx.notify("nxvim-diff: not a conflict diff — nothing to resolve", 4)
     return nil
   end
   -- Pick the conflict the cursor is in (or nearest); the diff shows them all at once.
   local region = region_at(session, session:cursor_row())
   if not region then
-    nx.notify("nxvim-diff: no conflict region to resolve", 3)
+    nx.notify("nxvim-diff: no conflict region to resolve", 4)
   end
   return region
 end
@@ -244,7 +244,7 @@ function M.pick_lines(session)
   if added == 0 then
     local why = skipped > 0 and "those lines aren't part of the conflict"
       or "no lines to pick here"
-    nx.notify("nxvim-diff: " .. why .. " — pick within the highlighted block", 3)
+    nx.notify("nxvim-diff: " .. why .. " — pick within the highlighted block", 4)
     return
   end
   local extra = skipped > 0 and (" (skipped %d outside the conflict)"):format(skipped) or ""
@@ -266,7 +266,7 @@ function M.apply_picked(session)
     return
   end
   if not (region.picks and #region.picks > 0) then
-    nx.notify("nxvim-diff: no lines picked yet — select lines and use pick_lines first", 3)
+    nx.notify("nxvim-diff: no lines picked yet — select lines and use pick_lines first", 4)
     return
   end
   local lines = {}
