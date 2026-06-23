@@ -85,6 +85,94 @@ nx.test.describe("nxvim-diff conflict resolve", function()
     nx.test.expect(table.concat(lines, "|")).to_be("top|their change|bot")
   end)
 
+  nx.test.it("choose_both keeps both sides — ours then theirs", function(t)
+    local _, bufnr = open_conflict(t)
+    diff.conflict()
+    local s = await_ready()
+    nav.choose_both(s)
+    local lines = await_lines(t, bufnr, { "top", "our change", "their change", "bot" })
+    nx.test.expect(table.concat(lines, "|")).to_be("top|our change|their change|bot")
+  end)
+
+  nx.test.it("pick_lines + apply_picked composes a resolution from either side", function(t)
+    local _, bufnr = open_conflict(t)
+    diff.conflict()
+    local s = await_ready()
+    local row = s.resolve.regions[1].rows.first
+
+    -- Stage theirs first, then ours, from their respective panes: the picks accumulate in
+    -- selection order, so the result is "their change" then "our change".
+    local function pick_from(pane_idx)
+      s.panes[pane_idx].view:set_cursor(row)
+      s.panes[pane_idx].view:focus()
+      nx.await(nx.wait_for(function()
+        return nx.win.current() == s.panes[pane_idx].view:winid() and s:cursor_row() == row
+      end, { tries = 100, interval = 5, message = "pane never focused at the conflict row" }))
+      nav.pick_lines(s)
+    end
+    pick_from(2) -- theirs (2-way: ours | theirs)
+    pick_from(1) -- ours
+    local picks = s.resolve.regions[1].picks
+    local text = {}
+    for _, p in ipairs(picks) do
+      text[#text + 1] = p.text
+    end
+    nx.test.expect(table.concat(text, "|")).to_be("their change|our change")
+    -- Each pick recorded the pane it came from (for the gutter sign): theirs = side "b",
+    -- ours = side "a" (a 2-way conflict is ours | theirs).
+    nx.test.expect(picks[1].side).to_be("b")
+    nx.test.expect(picks[2].side).to_be("a")
+
+    nav.apply_picked(s)
+    local lines = await_lines(t, bufnr, { "top", "their change", "our change", "bot" })
+    nx.test.expect(table.concat(lines, "|")).to_be("top|their change|our change|bot")
+  end)
+
+  nx.test.it("pick_lines refuses lines outside the conflict (shared context)", function(t)
+    open_conflict(t)
+    diff.conflict()
+    local s = await_ready()
+    -- Row 1 is "top" — shared context, above the conflict region — so picking it stages
+    -- nothing and warns. (The conflict region starts at regions[1].rows.first.)
+    s.panes[1].view:set_cursor(1)
+    s.panes[1].view:focus()
+    nx.await(nx.wait_for(function()
+      return nx.win.current() == s.panes[1].view:winid() and s:cursor_row() == 1
+    end, { tries = 100, interval = 5, message = "pane never focused on row 1" }))
+    nav.pick_lines(s)
+    local msg = t:wait_for(function()
+      local m = t:message()
+      return (m:match("aren't part of the conflict") and m) or nil
+    end, { tries = 200, interval = 10, message = "no out-of-conflict notice appeared" })
+    nx.test.expect(msg:match("aren't part of the conflict") ~= nil).to_be(true)
+    nx.test.expect(s.resolve.regions[1].picks == nil or #s.resolve.regions[1].picks == 0).to_be(true)
+  end)
+
+  nx.test.it("apply_picked with nothing staged notifies and writes nothing", function(t)
+    local _, bufnr = open_conflict(t)
+    diff.conflict()
+    local s = await_ready()
+    nav.apply_picked(s)
+    local msg = t:wait_for(function()
+      local m = t:message()
+      return (m:match("no lines picked") and m) or nil
+    end, { tries = 200, interval = 10, message = "no 'no lines picked' notice appeared" })
+    nx.test.expect(msg:match("no lines picked") ~= nil).to_be(true)
+    -- The diff is still open and the buffer still holds its markers (nothing was written).
+    nx.test.expect(diff.session() ~= nil).to_be(true)
+    nx.test.expect(nx.buf.lines(bufnr, 1, 2)[1]).to_be("<<<<<<< HEAD")
+  end)
+
+  nx.test.it("clear_picked discards what pick_lines staged", function(t)
+    local _, _ = open_conflict(t)
+    diff.conflict()
+    local s = await_ready()
+    local region = s.resolve.regions[1]
+    region.picks = { { side = "a", row = region.rows.first, text = "leftover" } }
+    nav.clear_picked(s)
+    nx.test.expect(region.picks).to_be_nil()
+  end)
+
   nx.test.it("resolves only the conflict under the cursor in a multi-conflict file", function(t)
     local content = {
       "top",

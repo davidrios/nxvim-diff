@@ -19,11 +19,18 @@ M.ACTIONS = {
   last_hunk = true, -- jump to the last hunk
   refresh = true, -- re-run the source and re-render
   close = true, -- close the diff session, restoring the prior layout
-  -- Conflict resolution (`:NxDiffConflict` sessions only): write the chosen side back
-  -- into the live buffer, replacing the marker block, then close the diff. On a plain
+  -- Conflict resolution (`:NxDiffConflict` sessions only): write a chosen set of lines
+  -- back into the live buffer, replacing the marker block, then close the diff. On a plain
   -- diff these just notify "nothing to resolve".
-  choose_ours = true,
-  choose_theirs = true,
+  choose_ours = true, -- resolve to OURS
+  choose_theirs = true, -- resolve to THEIRS
+  choose_both = true, -- keep BOTH sides (ours then theirs), markers dropped
+  -- Compose a resolution by hand from either side: pick_lines stages the focused pane's
+  -- selected lines (normal or visual mode), apply_picked writes the staged lines back,
+  -- clear_picked discards them.
+  pick_lines = true,
+  apply_picked = true,
+  clear_picked = true,
 }
 
 -- The built-in default key bindings (normal mode, buffer-local on every diff pane).
@@ -33,10 +40,16 @@ local DEFAULT_KEYMAPS = {
   ["[c"] = "prev_hunk",
   ["[C"] = "first_hunk",
   ["]C"] = "last_hunk",
-  -- `co` / `ct` resolve a conflict to ours / theirs (no-ops with a notice on a plain
-  -- diff). The panes are read-only, so the `c` change operator is inert there anyway.
+  -- `co` / `ct` / `cb` resolve a conflict to ours / theirs / both; `cp` stages the
+  -- selected lines (normal or visual mode), `ca` applies what's staged, `cx` clears it
+  -- (all no-ops with a notice on a plain diff). The panes are read-only, so the `c` change
+  -- operator is inert there anyway.
   co = "choose_ours",
   ct = "choose_theirs",
+  cb = "choose_both",
+  cp = "pick_lines",
+  ca = "apply_picked",
+  cx = "clear_picked",
   R = "refresh",
   q = "close",
 }

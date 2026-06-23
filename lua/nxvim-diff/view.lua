@@ -66,8 +66,11 @@ local function project_text(proj, lines)
 end
 
 -- The extmark priorities: the whole-line tint sits under the intra-line DiffText spans
--- so the changed characters stay visible on top of the changed-line background.
+-- so the changed characters stay visible on top of the changed-line background. The pick
+-- tint sits BETWEEN them — above the conflict's own change tint (so a staged line reads as
+-- staged, not just changed) but still under the DiffText spans.
 local LINE_PRIORITY = 100
+local PICK_PRIORITY = 150
 local TEXT_PRIORITY = 200
 
 -- The per-hunk gutter sign for a changed real row, by its kind: `+` an added line,
@@ -76,6 +79,13 @@ local TEXT_PRIORITY = 200
 -- side, `change` on both), so the kind maps straight to the glyph.
 local SIGN_GLYPH = { add = "+", change = "~", del = "-" }
 local SIGN_HL = { add = "NxDiffSignAdd", change = "NxDiffSignChange", del = "NxDiffSignDelete" }
+
+-- The decoration drawn on a line the user has staged with `pick_lines` (see nav.lua): a
+-- `▶` gutter sign plus an `NxDiffPick` background tint over the line's text. Both live in
+-- their own namespace so they re-render on every pick/clear without touching the static
+-- diff decorations, and outrank the per-hunk layers (the sign shows over `~`, the tint over
+-- the conflict's change background).
+local PICK_GLYPH = "▶"
 
 -- Decoration marks for one pane (`config` gates the optional layers):
 --   * whole-line DiffAdd/DiffDelete/DiffChange tint on every changed real row,
@@ -158,9 +168,11 @@ local function finish(session, api)
           if not session.config.wrap then
             vim.wo[win].wrap = false
           end
-          -- With signs on, reserve the column on EVERY pane (not just ones that have a
-          -- sign) so the panes stay the same width and their lines keep lining up.
-          if session.config.signs then
+          -- Reserve the sign column on EVERY pane (not just ones that have a sign) so the
+          -- panes stay the same width and their lines keep lining up — when hunk signs are
+          -- on, or always on a conflict diff, where `pick_lines` draws a pick sign on any
+          -- pane and the column must already be there so the first pick doesn't reflow.
+          if session.config.signs or session.resolve then
             vim.wo[win].signcolumn = "yes"
           end
           -- Only the focused pane can animate a scroll; a synced (non-focused) pane is
@@ -313,6 +325,9 @@ function M.open(root, spec)
     rows = result.rows,
     hunks = result.hunks,
     ns = nx.ns.create("nxvim-diff"),
+    -- A second namespace for the dynamic pick-line gutter signs, repainted on every
+    -- pick/clear independently of the static diff decorations in `ns`.
+    pick_ns = nx.ns.create("nxvim-diff-picks"),
     panes = panes,
     -- The conflict write-back target (only a `:NxDiffConflict` spec carries it); the
     -- `choose_*` actions read it. Absent on a plain (non-conflict) diff.
@@ -341,6 +356,45 @@ function M.open(root, spec)
       p.view:set_cursor(row)
     end
     self.panes[1].view:focus()
+  end
+
+  -- Repaint the picked-line gutter signs (nav's pick_lines / clear_picked call this after
+  -- changing the staged set). Each conflict region carries `picks` — `{ side, row }` entries
+  -- recording which pane and alignment row was staged — so a pick shows on the very pane it
+  -- was taken from. Rebuilds the whole pick_ns mark set each call, so clearing a region's
+  -- picks (picks = nil) simply paints no marks for it. A no-op on a non-conflict diff.
+  function session:render_picks()
+    if not self.resolve then
+      return
+    end
+    for _, p in ipairs(self.panes) do
+      local marks = {}
+      for _, region in ipairs(self.resolve.regions or {}) do
+        for _, pick in ipairs(region.picks or {}) do
+          if pick.side == p.side then
+            local line0 = pick.row - 1
+            marks[#marks + 1] = {
+              line = line0,
+              col = 0,
+              sign_text = PICK_GLYPH,
+              sign_hl_group = "NxDiffSignPick",
+              priority = TEXT_PRIORITY,
+            }
+            -- The background tint over the staged line's text (an empty line has no width
+            -- to paint, like the static line tints).
+            marks[#marks + 1] = {
+              line = line0,
+              col = 0,
+              end_row = line0,
+              end_col = #(p.text[pick.row] or ""),
+              hl_group = "NxDiffPick",
+              priority = PICK_PRIORITY,
+            }
+          end
+        end
+      end
+      p.view:set_decor(self.pick_ns, marks)
+    end
   end
 
   session.reopen = function()

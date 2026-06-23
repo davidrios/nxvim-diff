@@ -26,6 +26,8 @@ M.defaults = {
   NxDiffSignAdd = { fg = "#a6e3a1" }, -- the "+" hunk sign
   NxDiffSignChange = { fg = "#f9e2af" }, -- the "~" hunk sign
   NxDiffSignDelete = { fg = "#f38ba8" }, -- the "-" hunk sign
+  NxDiffSignPick = { fg = "#89b4fa", bold = true }, -- the picked-line gutter sign
+  NxDiffPick = { bg = "#243b55" }, -- a staged (picked) line's background tint
   NxDiffLabel = { fg = "#b4befe", bold = true }, -- a pane's header label (winbar/title)
 }
 

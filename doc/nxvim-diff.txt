@@ -55,19 +55,17 @@ buffer-local maps on every pane (all rebindable, see |nxvim-diff-config|):
 	[C			Jump to the first hunk.
 	co			Resolve the conflict to OURS (conflict diffs only).
 	ct			Resolve the conflict to THEIRS (conflict diffs only).
+	cb			Resolve the conflict to BOTH (ours then theirs).
+	cp			Stage the selected line(s) from this pane (normal or
+				visual mode) toward a hand-built resolution.
+	ca			Apply the staged lines as the resolution.
+	cx			Clear the staged lines.
 	R			Refresh — re-run the source and re-render.
 	q			Close the diff, restoring the prior layout.
 
-Hunk motions wrap around (past the last hunk → the first, and vice versa).
-
-`co` / `ct` only do something on a |:NxDiffConflict| diff: they write the chosen
-side back into the live conflicted buffer — replacing the marker block
-(`<<<<<<<` … `>>>>>>>`) of the conflict UNDER THE CURSOR with ours / theirs — then
-close the diff so you're back on the resolved file (`:w` to save). The diff shows
-every conflict in the file at once, so jump to one with `]c`/`[c` first; if the
-cursor is between conflicts, the nearest is resolved. They abort loud if the
-markers moved since the diff opened. On a plain (non-conflict) diff they just say
-there's nothing to resolve.
+Hunk motions wrap around (past the last hunk → the first, and vice versa). The
+conflict maps (`co` / `ct` / `cb` / `cp` / `ca` / `cx`) only do something on a
+|:NxDiffConflict| diff — see |nxvim-diff-resolve|.
 
 ==============================================================================
 THE 3-WAY (DIFF3) LAYOUT				*nxvim-diff-3way*
@@ -174,8 +172,10 @@ require("nxvim-diff").setup({opts}) merges {opts} over the defaults (shown): >
 `keymaps` is a `key -> action` table merged key-by-key (so you override one
 binding without redeclaring all). An action is a built-in name (`next_hunk`,
 `prev_hunk`, `first_hunk`, `last_hunk`, `choose_ours`, `choose_theirs`,
-`refresh`, `close`), a function `fn(session, api)`, or `false` to drop a key. An
-unknown name fails loud.
+`choose_both`, `pick_lines`, `apply_picked`, `clear_picked`, `refresh`,
+`close`), a function `fn(session, api)`, or `false` to drop a key. An unknown
+name fails loud. `pick_lines` also binds in visual mode (the selection is its
+input); the other built-ins are normal-mode.
 
 Highlights use the canonical |hl-DiffAdd| / |hl-DiffDelete| / |hl-DiffChange|
 / |hl-DiffText| groups, so a ported colorscheme themes the viewer unmodified;
@@ -195,14 +195,37 @@ CONFLICT RESOLUTION					*nxvim-diff-resolve*
 conflict shown in context — the reconstructed ours/base/theirs sides differ only
 where the conflicts are, so `]c`/`[c` step from one to the next.
 
-`co` (`choose_ours`) and `ct` (`choose_theirs`) resolve the conflict UNDER THE
-CURSOR: its marker block (`<<<<<<<` … `>>>>>>>`) is replaced in the live buffer
-with that side's lines via the editor's `nx.buf.set_lines`, as one undoable edit,
-and the diff closes so you land back on the file. Each conflict knows the
-alignment rows it occupies, so the cursor picks which one is resolved; when the
-cursor sits on shared context between conflicts, the nearest is chosen. The action
-guards the write — if the markers are no longer where the diff found them (the
-file changed underneath), it aborts loud and writes nothing.
+Every resolve map acts on the conflict UNDER THE CURSOR: its marker block
+(`<<<<<<<` … `>>>>>>>`) is replaced in the live buffer via the editor's
+`nx.buf.set_lines`, as one undoable edit, and the diff closes so you land back on
+the file (`:w` to save). Each conflict knows the alignment rows it occupies, so
+the cursor picks which one is resolved; when the cursor sits on shared context
+between conflicts, the nearest is chosen. Every write is guarded — if the markers
+are no longer where the diff found them (the file changed underneath), it aborts
+loud and writes nothing. On a plain (non-conflict) diff the maps just say there's
+nothing to resolve.
+
+	co  (choose_ours)	Replace the block with OURS.
+	ct  (choose_theirs)	Replace the block with THEIRS.
+	cb  (choose_both)	Replace the block with BOTH sides — ours then
+				theirs (left-to-right reading order), markers
+				dropped.
+
+When neither whole side is right, build the resolution by hand:
+
+	cp  (pick_lines)	Stage the selected line(s) FROM THE FOCUSED PANE.
+				In normal mode it stages the current line; in
+				visual mode the whole selection. Run it on ours,
+				then on theirs, then move on — picks accumulate in
+				selection order. Only the conflict's OWN lines
+				qualify: shared context outside the conflict (not
+				part of the diff) and blank alignment-gap rows are
+				refused. Each staged line gets a `▶` gutter sign and
+				a background tint on the pane it was taken from.
+	ca  (apply_picked)	Replace the block with everything staged so far.
+	cx  (clear_picked)	Discard the staged lines (and their signs).
+
+Picks are per-conflict and last only for the current diff session.
 
 ==============================================================================
 PERFORMANCE						*nxvim-diff-perf*

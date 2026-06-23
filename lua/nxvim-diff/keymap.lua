@@ -29,11 +29,20 @@ function M.install(session, api)
             end
           end
           if fn then
-            nx.keymap.set("n", key, function()
-              api.run(function()
-                fn(session, api)
-              end)
-            end, { buffer = buf, desc = "nxvim-diff: " .. name })
+            -- Most actions are normal-mode; the ones in nav.VISUAL_ACTIONS (pick_lines)
+            -- also bind in visual mode, since the selection IS their input. A custom
+            -- function action stays normal-mode (we can't know its mode).
+            local modes = { "n" }
+            if type(action) == "string" and nav.VISUAL_ACTIONS[action] then
+              modes[#modes + 1] = "x"
+            end
+            for _, mode in ipairs(modes) do
+              nx.keymap.set(mode, key, function()
+                api.run(function()
+                  fn(session, api)
+                end)
+              end, { buffer = buf, desc = "nxvim-diff: " .. name })
+            end
           end
         end
       end

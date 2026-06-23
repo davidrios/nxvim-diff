@@ -26,6 +26,16 @@ nx.test.describe("nxvim-diff.config", function()
     nx.test.expect(cfg.keymaps["q"]).to_be("close")
   end)
 
+  nx.test.it("ships the resolve maps and validates their action names", function()
+    -- merge() runs validate(); it would raise if any default keymap named an unknown
+    -- action, so reaching the asserts proves the new actions are registered.
+    local cfg = config.merge(config.defaults(), {})
+    nx.test.expect(cfg.keymaps["cb"]).to_be("choose_both")
+    nx.test.expect(cfg.keymaps["cp"]).to_be("pick_lines")
+    nx.test.expect(cfg.keymaps["ca"]).to_be("apply_picked")
+    nx.test.expect(cfg.keymaps["cx"]).to_be("clear_picked")
+  end)
+
   nx.test.it("accepts a function as a custom keymap action", function()
     local cfg = config.merge(config.defaults(), { keymaps = { ["g?"] = function() end } })
     nx.test.expect(type(cfg.keymaps["g?"])).to_be("function")

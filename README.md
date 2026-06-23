@@ -39,10 +39,12 @@ covered by `nxvim --test-plugin .`:
   `DiffText` (a character-level diff).
 - **Hunk navigation** — `]c` / `[c` / `]C` / `[C`, with wrap-around.
 - **Conflict resolution** — `:NxDiffConflict` shows every conflict in the file at once;
-  `co` / `ct` write the chosen side (ours / theirs) of the conflict **under the cursor**
-  back into the live buffer, replacing its marker block as one undoable edit, then close
-  the diff. Built on the editor's `nx.buf.set_lines` (the async buffer-text write); guarded
-  so a moved marker aborts loud.
+  `co` / `ct` / `cb` write the chosen side (ours / theirs / both) of the conflict **under
+  the cursor** back into the live buffer, replacing its marker block as one undoable edit,
+  then close the diff. When neither whole side fits, `cp` stages the selected lines from a
+  pane (normal or visual mode) — only the conflict's own lines, marked with a `▶` gutter
+  sign and a background tint — and `ca` applies the hand-built composition (`cx` clears). Built on the editor's
+  `nx.buf.set_lines` (the async buffer-text write); guarded so a moved marker aborts loud.
 - **Gutter signs & fillchar** — `signs` puts a `+`/`~`/`-` gutter sign on each changed
   line (opt-in; every pane reserves the column so they stay aligned), and `fillchar`
   paints a rule across the blank alignment rows (vim's diff-filler style). Both ride
@@ -55,8 +57,8 @@ covered by `nxvim --test-plugin .`:
 
 All planned phases are complete (see
 [`docs/plans/2026-06-20-nxvim-diff.md`](docs/plans/2026-06-20-nxvim-diff.md)), including
-whole-file conflict diffs with a cursor→region resolve (`co`/`ct` act on the conflict the
-cursor is in).
+whole-file conflict diffs with a cursor→region resolve (`co`/`ct`/`cb` and the
+`cp`/`ca`/`cx` line-picker act on the conflict the cursor is in).
 
 ## Install
 
@@ -88,7 +90,8 @@ There are exactly two — by design:
 opens the **whole file** with every conflict in context: a diff3-style file (base section
 present) as a 3-way ours | base | theirs (the two outer panes center-anchored against the
 base), a plain-merge file as a 2-way ours/theirs. Step between conflicts with `]c`/`[c`
-and resolve the one under the cursor with `co`/`ct`.
+and resolve the one under the cursor with `co`/`ct`/`cb`, or hand-build it with
+`cp`/`ca`.
 
 Inside a diff (default, buffer-local bindings):
 
@@ -96,7 +99,9 @@ Inside a diff (default, buffer-local bindings):
 | --- | --- |
 | `]c` / `[c` | next / previous changed hunk |
 | `]C` / `[C` | last / first hunk |
-| `co` / `ct` | resolve conflict to ours / theirs (`:NxDiffConflict` diffs only) |
+| `co` / `ct` / `cb` | resolve conflict to ours / theirs / both (`:NxDiffConflict` diffs only) |
+| `cp` | stage selected conflict line(s) from this pane (normal or visual mode; `▶` sign) |
+| `ca` / `cx` | apply / clear the staged lines |
 | `R` | refresh |
 | `q` | close |
 

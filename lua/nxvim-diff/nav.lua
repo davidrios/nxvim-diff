@@ -65,21 +65,19 @@ function M.refresh(session)
   end
 end
 
--- Resolve the conflict by replacing its marker block in the live buffer with the chosen
--- side's lines. Only meaningful on a `:NxDiffConflict` session (which carries
--- `session.resolve`); a plain diff has nothing to write back to and just notifies.
+-- ===== conflict resolution (:NxDiffConflict sessions only) ==================
 --
--- The write goes through the editor's one buffer-text mutation, `nx.buf.set_lines`
--- (the marker block — lines [first-1, last) 0-based — is replaced wholesale by the
--- chosen side). It targets the conflicted buffer BY ID, so it doesn't matter that the
--- diff panes hold focus; the diff is closed first only to return the user to their
--- resolved file. It is guarded: if the recorded markers are no longer where we left
--- them (the file changed under us), it aborts loud rather than corrupt the buffer.
--- The conflict region the cursor sits in (the diff shows every conflict of the file at
--- once). A region carries the alignment-row range it occupies (`region.rows`, computed in
--- view.lua); the cursor's row picks it. When the cursor is between conflicts (on shared
--- context), the NEAREST region by row distance is chosen — so `co`/`ct` always act on the
--- conflict you're closest to, the way you'd expect after a `]c`/`[c` jump.
+-- The resolve actions all write a chosen set of lines back over the conflict's marker
+-- block in the live buffer and close the diff: `choose_ours`/`choose_theirs` pick one
+-- side, `choose_both` keeps both, and `pick_lines`/`apply_picked` compose a resolution by
+-- hand. They share `current_region` (which conflict) and `write_back` (the guarded edit).
+--
+-- region_at(session, row) — the conflict region the cursor sits in (the diff shows every
+-- conflict of the file at once). A region carries the alignment-row range it occupies
+-- (`region.rows`, computed in view.lua); the cursor's row picks it. When the cursor is
+-- between conflicts (on shared context), the NEAREST region by row distance is chosen — so
+-- the actions always act on the conflict you're closest to, as you'd expect after a
+-- `]c`/`[c` jump.
 local function region_at(session, row)
   local regions = (session.resolve and session.resolve.regions) or {}
   for _, region in ipairs(regions) do
@@ -99,19 +97,44 @@ local function region_at(session, row)
   return best
 end
 
-local function resolve(session, side)
-  local r = session.resolve
-  if not r then
+-- The conflict region under the cursor, or nil after notifying WHY there isn't one (a
+-- plain diff has no `resolve` target; the cursor may be nowhere near a region). Shared by
+-- every resolve action so they agree on "which conflict" and on the failure notices.
+local function current_region(session)
+  if not session.resolve then
     nx.notify("nxvim-diff: not a conflict diff — nothing to resolve", 3)
-    return
+    return nil
   end
   -- Pick the conflict the cursor is in (or nearest); the diff shows them all at once.
   local region = region_at(session, session:cursor_row())
   if not region then
     nx.notify("nxvim-diff: no conflict region to resolve", 3)
-    return
   end
-  local buf, first, last = r.buf, region.first, region.last
+  return region
+end
+
+-- The diff pane that currently holds focus (falls back to the first pane). Picking lines
+-- reads from whichever side the cursor is in.
+local function focused_pane(session)
+  local cur = nx.win.current()
+  for _, p in ipairs(session.panes) do
+    if p.view:winid() == cur then
+      return p
+    end
+  end
+  return session.panes[1]
+end
+
+-- Replace `region`'s marker block in the live conflicted buffer with `lines`, then close
+-- the diff so the user lands back on the resolved file. `label` names the choice in the
+-- notice. Guarded: if the recorded markers are no longer where we left them (the file
+-- changed under us), it aborts loud rather than corrupt the buffer.
+--
+-- The write goes through the editor's one buffer-text mutation, `nx.buf.set_lines`. It
+-- targets the conflicted buffer BY ID, so it doesn't matter that the diff panes hold
+-- focus; the diff is closed first only to return the user to their file.
+local function write_back(session, region, lines, label)
+  local buf, first, last = session.resolve.buf, region.first, region.last
   -- Guard: the live buffer must still carry the markers where we recorded them, else
   -- these line numbers are stale and writing would corrupt the file — refuse loud.
   local head = nx.buf.lines(buf, first - 1, first)[1] or ""
@@ -120,20 +143,26 @@ local function resolve(session, side)
     nx.notify("nxvim-diff: the conflict markers moved or are gone — aborting resolve", 4)
     return
   end
-  local chosen = region[side] or {}
 
   require("nxvim-diff").close()
   -- Replace [first-1, last) (0-based, end-exclusive) — the whole marker block — with the
-  -- chosen side. set_lines is async (the edit applies after this chunk); notify when it
+  -- chosen lines. set_lines is async (the edit applies after this chunk); notify when it
   -- lands, and surface any refusal (a nomodifiable buffer) rather than failing silent.
   nx.buf
-    .set_lines(buf, first - 1, last, true, chosen)
+    .set_lines(buf, first - 1, last, true, lines)
     :next(function()
-      nx.notify("nxvim-diff: resolved conflict using " .. side)
+      nx.notify("nxvim-diff: resolved conflict using " .. label)
     end)
     :catch(function(e)
       nx.notify("nxvim-diff: resolve failed: " .. tostring(e), 4)
     end)
+end
+
+local function resolve(session, side)
+  local region = current_region(session)
+  if region then
+    write_back(session, region, region[side] or {}, side)
+  end
 end
 
 function M.choose_ours(session)
@@ -144,8 +173,127 @@ function M.choose_theirs(session)
   resolve(session, "theirs")
 end
 
+-- choose_both — keep BOTH sides, ours then theirs (the left-to-right reading order), with
+-- the conflict markers dropped. The common "accept both" resolution.
+function M.choose_both(session)
+  local region = current_region(session)
+  if not region then
+    return
+  end
+  local both = {}
+  for _, line in ipairs(region.ours or {}) do
+    both[#both + 1] = line
+  end
+  for _, line in ipairs(region.theirs or {}) do
+    both[#both + 1] = line
+  end
+  write_back(session, region, both, "both sides")
+end
+
+-- pick_lines — stage the focused pane's conflict lines over the selected range into the
+-- under-cursor conflict's pick list, to compose a resolution by hand from either side.
+-- Bound in BOTH normal and visual mode (the keymap installer widens it via
+-- nav.VISUAL_ACTIONS): in normal mode it stages the cursor's row, in visual mode the whole
+-- selection. Only the conflict's OWN lines qualify — shared context outside the region (not
+-- part of the diff) and blank filler rows are refused — and each staged row gets a pick
+-- gutter sign (session:render_picks). Picks accumulate in the order made; `apply_picked`
+-- writes them back, `clear_picked` discards them.
+function M.pick_lines(session)
+  local region = current_region(session)
+  if not region then
+    return
+  end
+  local pane = focused_pane(session)
+  -- The selected alignment-row range. The base is the focused pane's cursor row (the
+  -- editor-agnostic `view:line()`, the same accessor the rest of nav uses). In visual mode
+  -- we widen to the selection: `line("v")` is the other end of the selection (and equals
+  -- the cursor row when not visual). It's guarded so an absent `line("v")` degrades to
+  -- picking the current row rather than erroring.
+  local cur = session:cursor_row()
+  local from, to = cur, cur
+  local ok, other = pcall(vim.fn.line, "v")
+  if ok and type(other) == "number" and other > 0 then
+    from, to = math.min(cur, other), math.max(cur, other)
+  end
+  -- Drop back to normal mode so the next pick (often from another pane) starts clean.
+  local _, mode = pcall(vim.fn.mode)
+  if type(mode) == "string" and mode:match("^[vV\22]") then
+    pcall(vim.cmd, "normal! \27")
+  end
+
+  -- Only the conflict's own lines may be staged — a row outside the region's alignment-row
+  -- range (`region.rows`) is shared context, NOT part of the diff, so it must not go into a
+  -- resolution. Filler (alignment-gap) rows carry no real text and are skipped too. What's
+  -- left is exactly the lines this pane actually contributes to the conflict.
+  local rows = region.rows
+  region.picks = region.picks or {}
+  local added, skipped = 0, 0
+  for row = from, to do
+    local e = pane.proj[row]
+    if e and not e.filler then
+      if rows and row >= rows.first and row <= rows.last then
+        region.picks[#region.picks + 1] = { side = pane.side, row = row, text = pane.text[row] }
+        added = added + 1
+      else
+        skipped = skipped + 1
+      end
+    end
+  end
+  session:render_picks()
+
+  if added == 0 then
+    local why = skipped > 0 and "those lines aren't part of the conflict"
+      or "no lines to pick here"
+    nx.notify("nxvim-diff: " .. why .. " — pick within the highlighted block", 3)
+    return
+  end
+  local extra = skipped > 0 and (" (skipped %d outside the conflict)"):format(skipped) or ""
+  nx.notify(
+    ("nxvim-diff: picked %d line(s) from %s (%d staged)%s"):format(
+      added,
+      pane.label or pane.side,
+      #region.picks,
+      extra
+    )
+  )
+end
+
+-- apply_picked — resolve the under-cursor conflict with the lines staged by pick_lines, in
+-- the order they were picked.
+function M.apply_picked(session)
+  local region = current_region(session)
+  if not region then
+    return
+  end
+  if not (region.picks and #region.picks > 0) then
+    nx.notify("nxvim-diff: no lines picked yet — select lines and use pick_lines first", 3)
+    return
+  end
+  local lines = {}
+  for _, pick in ipairs(region.picks) do
+    lines[#lines + 1] = pick.text
+  end
+  write_back(session, region, lines, "picked lines")
+end
+
+-- clear_picked — discard the lines staged for the under-cursor conflict (start over) and
+-- wipe their gutter signs.
+function M.clear_picked(session)
+  local region = current_region(session)
+  if not region then
+    return
+  end
+  region.picks = nil
+  session:render_picks()
+  nx.notify("nxvim-diff: cleared picked lines")
+end
+
 -- The cursor→region mapper, exposed for tests (pure: reads region.rows + a row number).
 M._region_at = region_at
+
+-- The built-in actions that also bind in visual mode (the selection IS the input). The
+-- keymap installer reads this to widen those bindings beyond normal mode.
+M.VISUAL_ACTIONS = { pick_lines = true }
 
 function M.close(_session)
   require("nxvim-diff").close()
