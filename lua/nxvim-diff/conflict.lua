@@ -138,9 +138,11 @@ function M.parse(lines)
   }
 end
 
--- spec(lines, name) → a diff spec (3-pane with base when diff3, else 2-pane), or
--- (nil, reason) when the file has no conflict markers.
-function M.spec(lines, name)
+-- spec(lines, name, filetype) → a diff spec (3-pane with base when diff3, else 2-pane),
+-- or (nil, reason) when the file has no conflict markers. `filetype` (the conflicted
+-- file's own filetype) is stamped on every pane so the reconstructed sides get the same
+-- syntax highlighting as the original file.
+function M.spec(lines, name, filetype)
   local p = M.parse(lines)
   if not p.has_conflict then
     return nil, "no conflict markers found"
@@ -148,12 +150,13 @@ function M.spec(lines, name)
   local ours_label = (p.ours_label and p.ours_label ~= "" and p.ours_label) or "ours"
   local theirs_label = (p.theirs_label and p.theirs_label ~= "" and p.theirs_label) or "theirs"
   local panes = {
-    { label = ours_label, lines = p.ours, readonly = true },
+    { label = ours_label, lines = p.ours, filetype = filetype, readonly = true },
   }
   if p.base then
-    panes[#panes + 1] = { label = "base", lines = p.base, readonly = true }
+    panes[#panes + 1] = { label = "base", lines = p.base, filetype = filetype, readonly = true }
   end
-  panes[#panes + 1] = { label = theirs_label, lines = p.theirs, readonly = true }
+  panes[#panes + 1] =
+    { label = theirs_label, lines = p.theirs, filetype = filetype, readonly = true }
   return {
     title = ("conflict — %s%s"):format(name or "", p.base and " (3-way)" or " (2-way)"),
     panes = panes,

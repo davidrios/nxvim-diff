@@ -57,6 +57,15 @@ nx.test.describe("nxvim-diff.conflict", function()
     nx.test.expect(#conflict.spec(MERGE, "f").panes).to_be(2)
   end)
 
+  nx.test.it("spec() stamps the file's filetype on every pane", function()
+    for _, pane in ipairs(conflict.spec(DIFF3, "f", "lua").panes) do
+      nx.test.expect(pane.filetype).to_be("lua")
+    end
+    for _, pane in ipairs(conflict.spec(MERGE, "f", "rust").panes) do
+      nx.test.expect(pane.filetype).to_be("rust")
+    end
+  end)
+
   nx.test.it("spec() returns nil + a reason for a clean file", function()
     local spec, reason = conflict.spec({ "a", "b" }, "f")
     nx.test.expect(spec).to_be_nil()

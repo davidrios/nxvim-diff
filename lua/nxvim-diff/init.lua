@@ -140,7 +140,10 @@ function M.conflict()
     nx.notify("nxvim-diff: no conflict markers found")
     return
   end
-  local ok, spec, reason = pcall(conflict.spec, nx.buf.lines(0, 0, -1), vim.fn.expand("%:t"))
+  -- Stamp the conflicted buffer's own filetype on every reconstructed pane so each side
+  -- gets the same syntax highlighting as the original file (mirrors git.head_spec).
+  local ft = vim.bo[0] and vim.bo[0].filetype or nil
+  local ok, spec, reason = pcall(conflict.spec, nx.buf.lines(0, 0, -1), vim.fn.expand("%:t"), ft)
   if not ok then
     -- `spec` holds the raise (an unterminated / malformed marker); strip any position
     -- prefix so the notice reads cleanly.
